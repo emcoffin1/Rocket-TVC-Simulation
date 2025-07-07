@@ -1,10 +1,28 @@
-import numpy as np
 import math
-
+import numpy as np
 class WindProfile:
     def __init__(self, airmodel: object):
         self.air = airmodel
         pass
+
+
+class GravityModel:
+    def __init__(self):
+        self.R = 6.471e6    # m -- Radius
+        self.g0 = 9.80665   # m/s2 -- standard g SL
+
+    def getGravity(self, alt_m):
+        return self.g0 * (self.R / (self.R + alt_m)) ** 2
+
+
+class CoreolusModel():
+    def __init__(self, latrad=np.radians(35.4275)):
+        self.omega = 7.2921150e-5
+        self.launchLatRag = latrad
+
+    def getCoriolisEffect(self, vel_m_s):
+        return -2 * np.cross(self.omega, vel_m_s)
+
 
 class AirProfile:
     def __init__(self):
@@ -20,19 +38,17 @@ class AirProfile:
         self.gamma = 1.4         # for dry air
 
         self.maxEffectiveAlt = 70000 # m
+        self.referenceALt = 11000
 
-    def getDensity(self, alt_m:float):
+    def getDensity(self, alt_m: float):
         """
         :param alt_m:
         :return density (kg/m3):
         """
-        P = self.getStaticPressure(alt_m)
-        layer = self._findLayer(alt_m)
-        T0 = layer["T_base"]
-        L = layer["L"]
-        h0 = layer["h_base"]
-        T = T0 + L * (alt_m - h0) if L != 0 else T0
-        return P / (self.R * T)
+        if alt_m < self.referenceALt:
+            temp_ratio = 1 - (self.L * alt_m / self.T0)
+            return self.densityAir * temp_ratio **  ((self.g / (self.R * self.L)) + 1)
+        return 0.0
 
     def getStaticPressure(self, alt_m:float):
         if alt_m < self.maxEffectiveAlt:
@@ -50,11 +66,10 @@ class AirProfile:
         return 0.5 * rho * velocity_mps ** 2
 
     def getTemperature(self, alt_m: float):
-        layer = self._findLayer(alt_m)
-        T0 = layer["T_base"]
-        L = layer["L"]
-        h0 = layer["h_base"]
-        return T0 + L * (alt_m - h0) if L != 0 else T0
+        if alt_m <= self.referenceALt:
+            return self.T0 - self.L * alt_m
+        return 0.0
+
 
     def getSpeedOfSound(self, alt_m: float):
         T = self.getTemperature(alt_m)

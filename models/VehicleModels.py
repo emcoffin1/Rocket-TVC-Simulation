@@ -1,11 +1,21 @@
 import numpy as np
 import math
-from EnvironmentalModels import AirProfile
+from EnvironmentalModels import AirProfile, GravityModel
+
+
+def unpackStates(state):
+    pos = state[0:3]
+    vel = state[3:6]
+    quat = state[6:10]
+    omega = state[10:13]
+    mass = state[13]
+    return pos, vel, quat, omega, mass
+
 
 class Rocket:
     def __init__(self):
         # -- Constants -- #
-        self.gravity = 9.8          # m/s2
+        self.grav = GravityModel()       # m/s2
 
         # -- Environmental Specific -- #
         #self.air = airmodel
@@ -15,6 +25,24 @@ class Rocket:
         self.structure = RocketStructure(self.engine.burnTime, self.engine.massFlowRate)
         self.aerodynamics = RocketAerodynamics()
         self.tvc = RocketTVC()
+
+        # -- States -- #
+        self.state = np.array([
+            0.0, 0.0, 0.0,                      # Position (x, y, z)
+            0.0, 0.0, 0.0,                      # Velocity (vx, vy, vz)
+            0.0, 0.0, 0.0, 1.0,                 # Quat  (xi, yj, zk, 1)
+            0.0, 0.0, 0.0,                      # Angular Velocity
+            self.structure.getCurrentMass(0.0)  # Mass
+        ])
+
+    def getForces(self, time: float, alt: float):
+
+        # -- Constants -- #
+        pos, vel, quat, omega, mass = unpackStates(self.state)
+        gravity = self.grav.getGravity(alt)
+
+
+
 
 
 
