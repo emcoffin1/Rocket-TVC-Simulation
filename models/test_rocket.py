@@ -22,15 +22,15 @@ if __name__ == "__main__":
     mass_log = []
     force_log = []
     density_log = []
-    dynamicpres_log = []
+    dynamicpress_log = []
 
     for _ in range(steps):
         # Unpack state
-        a, b, c, d, rho, q = rocket.getTotalForce(state)
+        a, b, c, d, rho, q, _ = rocket.getTotalForce(state)
         pos, vel, quat, omega, mass, time, aoa, beta = VehicleModels.unpackStates(state)
 
         force_log.append(a+b+c+d)
-        dynamicpres_log.append(q)
+        dynamicpress_log.append(q)
         # Log data
         time_log.append(time)
         pos_log.append(pos)
@@ -56,41 +56,44 @@ if __name__ == "__main__":
     mass_log = np.array(mass_log)
     force_log = np.array(force_log)
     density_log = np.array(density_log)
-    dynamicpres_log = np.array(dynamicpres_log)
+    dynamicpress_log = np.array(dynamicpress_log)
 
     max_q = 0
     max_q_index = 0
 
-    # Assumes you have logs of altitude and dynamic pressure over time
+    # Determine max pressure
     for i in range(1, len(pos_log[:, 2])):
         if pos_log[i, 2] < pos_log[i - 1, 2]:  # Descent started
             break
-        if dynamicpres_log[i] > max_q:
-            max_q = dynamicpres_log[i]
+        if dynamicpress_log[i] > max_q:
+            max_q = dynamicpress_log[i]
             max_q_index = i
 
     print(
         f"Max Q (ascent only): {max_q:.2f} Pa at t = {time_log[max_q_index]:.2f} s, alt = {pos_log[max_q_index, 2]:.2f} m")
 
+    print(f"Apogee: {max(pos_log[:,2])}")
+    print(f"Max Velocity: {max(vel_log[:,2])}")
+
     plt.figure()
     plt.subplot(2, 2, 1)
     plt.plot(time_log, force_log)
-    plt.xlabel("Forces")
+    plt.xlabel("Forces (N)")
     plt.grid(True)
 
     plt.subplot(2, 2, 2)
     plt.plot(time_log, pos_log)
-    plt.xlabel("Alt")
+    plt.xlabel("Alt (m)")
     plt.grid(True)
 
     plt.subplot(2, 2, 3)
     plt.plot(time_log, vel_log)
-    plt.xlabel("Vel")
+    plt.xlabel("Vel (m/s)")
     plt.grid(True)
 
     plt.subplot(2, 2, 4)
-    plt.plot(time_log, dynamicpres_log)
-    plt.xlabel("Density")
+    plt.plot(time_log, dynamicpress_log)
+    plt.xlabel("Dynamic Pressure (kPa)")
     plt.grid(True)
 
     plt.tight_layout()

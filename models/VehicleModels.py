@@ -2,6 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import math
 import EnvironmentalModels
+from EngineModels import RocketEngine
 
 def rk4_step(rocket, state, dt):
 
@@ -77,7 +78,7 @@ class Rocket:
             0.0, 0.0, 0.0,                       # Velocity (vx, vy, vz)
             0.0, 0.0, 0.0, 1.0,                  # Quat  (xi, yj, zk, 1)
             0.0, 0.0, 0.0,                       # Angular Velocity
-            self.structure.getCurrentMass(0.0),  # Mass
+            self.structure.wetMass,              # Mass
             0.0,                                 # Time
             0.0, 0.0,                            # AOA, BETA in reference to wind
 
@@ -85,7 +86,7 @@ class Rocket:
 
     def getDynamics(self, state):
 
-        a,b,c,d,_,__ = self.getTotalForce(state)
+        a,b,c,d,_,__, static_pres = self.getTotalForce(state)
         force = a + b + c + d
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state)
         # Sum of all accelerations --- a = F/m
@@ -101,7 +102,7 @@ class Rocket:
         domega = np.zeros(3)
 
         # -- Mass Change -- #
-        dmdt = -self.engine.getMassFlowRate(time)
+        dmdt = -self.engine.getMassFlowRate(time, pressure=static_pres)
 
         # -- State Derivative -- #
         # The change in state variables
@@ -160,7 +161,7 @@ class Rocket:
         q = self.air.getDynamicPressure(alt_m=alt_m, velocity_mps=vel)
 
         # print(drag_force)
-        return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass), rho, q
+        return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass), rho, q, stat_pres
 
 
 
@@ -186,7 +187,7 @@ class RocketStructure:
         self.burnTime = bt_s
         self.massFlowRate = mfr_kg_s
 
-    def getCurrentMass(self, time: float):
+    def getCurrentMass(self, time: float, pressure: float):
         """
         Gives current mass as a function of mass flow rate and time
         :param time:
@@ -229,10 +230,29 @@ class RocketAerodynamics:
         self.dragCoeff = 0.35
         self.liftCoeff = 1.2
 
-        self.CP = 13.38
+        self.CP = 4.20624   # m -- 13.38 ft
 
         self.air = airprofile
         self.wind = windprofile
+
+        self.cd_M_points = np.array([
+            0.0166667, 0.125, 0.2583333, 0.3833333, 0.5, 0.6, 0.6833333, 0.775,
+            0.85, 0.9333333, 1.0, 1.1083333, 1.1916667, 1.2833333, 1.3333333,
+            1.4333333, 1.525, 1.6, 1.6833333, 1.775, 1.8666667, 1.9583333,
+            2.0666667, 2.1916667, 2.2916667, 2.4083333, 2.55, 2.7, 2.875,
+            3.0666667, 3.3083333, 3.5416667, 3.8, 4.1, 4.525, 5.0166667,
+            5.575, 6.1083333, 6.5833333, 7.0166667, 7.5666667, 8.0583333,
+            8.6, 9.1083333, 9.775, 10.0416667
+        ])
+
+        self.cd_points = np.array([
+            0.3000, 0.2830, 0.2696, 0.2643, 0.2607, 0.2688, 0.2804, 0.3009,
+            0.3295, 0.3643, 0.4027, 0.4536, 0.4955, 0.5313, 0.5482, 0.5536,
+            0.5509, 0.5429, 0.5330, 0.5205, 0.5063, 0.4848, 0.4616, 0.4321,
+            0.4054, 0.3813, 0.3536, 0.3268, 0.3009, 0.2750, 0.2500, 0.2321,
+            0.2179, 0.2080, 0.2018, 0.1991, 0.2036, 0.2116, 0.2205, 0.2304,
+            0.2420, 0.2518, 0.2598, 0.2616, 0.2616, 0.2616
+        ])
 
     def getDragCoeff(self, alt: float, mach, aoa: float, beta: float, burntime: float):
         """
@@ -244,8 +264,13 @@ class RocketAerodynamics:
         :param burntime:
         :return dragCoeff:
         """
-        cd = 0.3 + 0.5 * np.sin(aoa)
-        return cd
+
+        Mach_clamped = np.clip(mach, self.cd_M_points[0], self.cd_M_points[-1])
+        val = float(np.interp(Mach_clamped, self.cd_M_points, self.cd_points))
+        # print(val)
+        return val
+        # cd = 0.3 + 0.5 * np.sin(aoa)
+        # return cd
 
     def getLiftCoeff(self, alt: float, vel):
         """
@@ -287,42 +312,6 @@ class RocketAerodynamics:
         drag = drag_magnitude * drag_direction
         return drag
 
-
-class RocketEngine:
-    def __init__(self):
-        self.isp = 300
-        self.massFlowRate = 4.2134195
-        self.burnTime = 23.7
-
-        self.chamberExitRatio = 1/8
-
-    def getThrust(self, time: float, pressure: float):
-        if time < self.burnTime:
-
-            thrust = np.polyval([0.000127581, -0.0164375, 0.92882, -36.2125, 1998.08], time)
-            Pc = self.getChamberPressure(time)
-            Pe = Pc / 8
-            T = thrust * 4.448 + (Pe*6894.76 - pressure) * (5.362**2/4*math.pi/39.37**2) # lbf * N/lbf
-            return np.array([0, 0, T])
-        else:
-            return np.zeros(3)
-
-    def getMassFlowRate(self, time: float):
-        if time <= self.burnTime:
-            return self.massFlowRate
-        return 0.0
-
-    def getChamberPressure(self, time: float):
-        return np.polyval([5.10325e-06, -0.000657499, 0.0371528, -1.4485, 79.9233], time)
-
-    def getExitPressure(self, time: float):
-        return self.getChamberPressure(time) * self.chamberExitRatio
-
-    def getPropUsed(self, time: float):
-        return min(self.massFlowRate * time, self.massFlowRate * self.burnTime)
-
-    def getRemainingProp(self, time: float):
-        return max(0.0, self.massFlowRate * self.burnTime - self.getPropUsed(time))
 
 
 class RocketTVC:
