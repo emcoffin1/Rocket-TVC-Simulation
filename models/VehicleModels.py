@@ -85,7 +85,7 @@ class Rocket:
 
     def getDynamics(self, state):
 
-        a,b,c,d = self.getTotalForce(state)
+        a,b,c,d,_,__ = self.getTotalForce(state)
         force = a + b + c + d
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state)
         # Sum of all accelerations --- a = F/m
@@ -123,6 +123,7 @@ class Rocket:
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state)
         alt_m = pos[2]
         rho = self.air.getDensity(alt_m=alt_m)
+        # print(rho)
         stat_pres = self.air.getStaticPressure(alt_m=alt_m)
 
         # -- Velocity -- #
@@ -143,18 +144,23 @@ class Rocket:
         thrust_force_global = R.from_quat(quat).apply(thrust_force_body)
 
         # Drag
-        drag_force = self.aerodynamics.getDragForce(vel_m_s=v_air, rho=rho, cross_area=self.structure.zxPlaneArea,
+        drag_force = self.aerodynamics.getDragForce(vel_m_s=v_air, rho=rho, cross_area=self.structure.xyPlaneArea,
                                                     pos=pos, aoa=aoa, beta=beta, burntime=self.engine.burnTime)
-        print(np.linalg.norm(drag_force))
+        #print(np.linalg.norm(drag_force))
 
         # -- SUMS -- #
         # Sum of forces -- must be a vector
-        force = (thrust_force_global
-                  + drag_force
-                  # + (gravity * mass)
-                  # + (coriolis_acc * mass)
-                )
-        return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass)
+        # force = (thrust_force_global
+        #         + drag_force
+        #         + (gravity * mass)
+        #         + (coriolis_acc * mass)
+        #         )
+
+        # Dynamic Pressure
+        q = self.air.getDynamicPressure(alt_m=alt_m, velocity_mps=vel)
+
+        # print(drag_force)
+        return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass), rho, q
 
 
 
@@ -165,6 +171,7 @@ class RocketStructure:
         self.length = 5.4864    # m -- 18 ft
         self.diameter = 0.254   # m -- 10 in
         self.zxPlaneArea = self.length * self.diameter
+        self.xyPlaneArea = math.pi / 4 * self.diameter**2
 
         self.wetMass = 117.8907629  # kg -- 392.182 lbm
         self.dryMass = 77.5144001   # kg -- 170.890 lbm
@@ -218,7 +225,7 @@ class RocketStructure:
 
 
 class RocketAerodynamics:
-    def __init__(self, airprofile: object, windprofile: object):
+    def __init__(self, airprofile: EnvironmentalModels.AirProfile, windprofile: object):
         self.dragCoeff = 0.35
         self.liftCoeff = 1.2
 
@@ -227,17 +234,17 @@ class RocketAerodynamics:
         self.air = airprofile
         self.wind = windprofile
 
-    def getDragCoeff(self, alt: float, vel, aoa: float, beta: float, burntime: float):
+    def getDragCoeff(self, alt: float, mach, aoa: float, beta: float, burntime: float):
         """
         Uses poly fit to determine current drag coefficient
         :param alt:
-        :param vel:
+        :param mach:
         :param aoa: rad
         :param beta:
         :param burntime:
         :return dragCoeff:
         """
-        cd = 0.3 + 0.5 * np.abs(np.sin(aoa))
+        cd = 0.3 + 0.5 * np.sin(aoa)
         return cd
 
     def getLiftCoeff(self, alt: float, vel):
@@ -263,14 +270,22 @@ class RocketAerodynamics:
         :param beta:
         :return: [x,y,z] in inertial/global frame
         """
-        v_air_magnitude = np.linalg.norm(vel_m_s)
-        if v_air_magnitude > 0:
-            v_air_direction = vel_m_s / v_air_magnitude
-            cd = self.getDragCoeff(pos[2], vel_m_s, aoa, beta, burntime)
-            drag = -0.5 * rho * v_air_magnitude ** 2 * cd * cross_area * v_air_direction
-            return drag
-        else:
+        v_air = vel_m_s
+        v_mag = np.linalg.norm(v_air)
+
+        if v_mag == 0:
             return np.zeros(3)
+
+        # Direction opposite to motion
+        drag_direction = -v_air / v_mag  # explicitly say "opposite"
+        mach = self.air.getMachNumber(pos[2], v_mag)
+        cd = self.getDragCoeff(pos[2], mach, aoa, beta, burntime)
+        drag_magnitude = 0.5 * rho * v_mag ** 2 * cd * cross_area
+
+
+
+        drag = drag_magnitude * drag_direction
+        return drag
 
 
 class RocketEngine:

@@ -60,10 +60,12 @@ class AirProfile:
         :param alt_m:
         :return density (kg/m3):
         """
-        if alt_m < self.referenceALt:
-            temp_ratio = 1 - (self.L * alt_m / self.T0)
-            return self.densityAir * temp_ratio **  ((self.g / (self.R * self.L)) + 1)
-        return 0.0
+        temp_ratio = 1 - (self.L * alt_m / self.T0)
+        #print(temp_ratio)
+        if temp_ratio <= 0:
+            return 0.0
+        rho = self.densityAir * temp_ratio ** ((self.g / (self.R * self.L)) + 1)
+        return rho
 
     def getStaticPressure(self, alt_m:float):
         if alt_m < self.maxEffectiveAlt:
@@ -77,6 +79,7 @@ class AirProfile:
         :param velocity_mps:
         :return:
         """
+        velocity_mps = np.linalg.norm(velocity_mps)
         rho = self.getDensity(alt_m)
         return 0.5 * rho * velocity_mps ** 2
 
@@ -91,9 +94,11 @@ class AirProfile:
         return math.sqrt(self.gamma * self.R * T)
 
     def getMachNumber(self, alt_m: float, velocity_mps: float):
-        a = self.getSpeedOfSound(alt_m)
-        return velocity_mps / a
 
+        a = self.getSpeedOfSound(alt_m)
+        if a > 0:
+            return velocity_mps / a
+        return 0.0
     def getDynamicViscosity(self, alt_m: float):
         T = self.getTemperature(alt_m)
         mu0 = 1.716e-5
