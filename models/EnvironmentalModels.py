@@ -1,9 +1,12 @@
 import math
 import numpy as np
 class WindProfile:
-    def __init__(self, airmodel: object):
-        self.air = airmodel
+    def __init__(self):
         pass
+
+    def getWindVelocity(self, alt_m):
+        return np.zeros(3)
+
 
 
 class GravityModel:
@@ -12,16 +15,28 @@ class GravityModel:
         self.g0 = 9.80665   # m/s2 -- standard g SL
 
     def getGravity(self, alt_m):
-        return self.g0 * (self.R / (self.R + alt_m)) ** 2
+        g = self.g0 * (self.R / (self.R + alt_m)) ** 2
+        return np.array([0, 0, -g])
 
 
-class CoreolusModel():
+class CoriolisModel:
     def __init__(self, latrad=np.radians(35.4275)):
-        self.omega = 7.2921150e-5
         self.launchLatRag = latrad
+        self.omega = 7.2921150e-5
+        self.omegaE = np.array([
+            0,
+            self.omega * math.cos(self.launchLatRag),
+            self.omega * math.sin(self.launchLatRag)
+        ])
 
     def getCoriolisEffect(self, vel_m_s):
-        return -2 * np.cross(self.omega, vel_m_s)
+        """
+        Returns acceleration as a vector
+        :param vel_m_s:
+        :return:
+        """
+        acc = -2 * np.cross(self.omegaE, vel_m_s)
+        return acc
 
 
 class AirProfile:

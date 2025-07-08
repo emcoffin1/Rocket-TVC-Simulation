@@ -1,64 +1,89 @@
 import numpy as np
-
-from VehicleModels import Rocket
+import VehicleModels
+import EnvironmentalModels
 import matplotlib.pyplot as plt
-from EnvironmentalModels import AirProfile
 
-# Setup
-t = 0
-flight_time = 500
-dt = 0.01
-alt = 0
-vel = 0
+if __name__ == "__main__":
 
-# Logging
-times = []
-thrust = []
-accel = []
-alts = []
-density = []
-temps = []
+    rocket = VehicleModels.Rocket()
+    state = rocket.state.copy()
 
-air = AirProfile()
-rocket = Rocket()
+    dt = 0.1  # timestep in seconds
+    t_final = 30.0
+    steps = int(t_final / dt)
 
+    # Logging Containers
+    time_log = []
+    pos_log = []
+    vel_log = []
+    quat_log = []
+    aoa_log = []
+    beta_log = []
+    mass_log = []
+    force_log = []
 
-for _ in range(int(round(flight_time / dt))):
-    # Get current thrust and mass
-    pres = air.getStaticPressure(alt)
-    dens = air.getDensity(alt)
-    temp = air.getTemperature(alt)
-    T = rocket.engine.getThrust(t, pres)
-    m = rocket.structure.getCurrentMass(t)
-    a = T / m - rocket.gravity  # subtract gravity (assumed g = 9.81 or variable)
+    for _ in range(steps):
+        # Unpack state
+        a,b,c,d = rocket.getTotalForce(state)
+        pos, vel, quat, omega, mass, time, aoa, beta = VehicleModels.unpackStates(state)
 
-    # Integrate motion
-    vel += a * dt
-    alt += vel * dt
+        force_log.append([a, b, c, d])
+        # Log data
+        time_log.append(time)
+        pos_log.append(pos)
+        vel_log.append(vel)
+        quat_log.append(quat)
+        aoa_log.append(aoa)
+        beta_log.append(beta)
+        mass_log.append(mass)
 
-    #print(t, pres,T, m, a, vel , alt)
+        # RK4 integration
+        state = VehicleModels.rk4_step(rocket, state, dt)
 
-    # Log data
-    t += dt
-    # print(m)
-    times.append(t)
-    thrust.append(T)
-    accel.append(a)
-    alts.append(alt)
-    density.append(dens)
-    temps.append(temp)
+    time_log = np.array(time_log)
+    pos_log = np.array(pos_log)
+    vel_log = np.array(vel_log)
+    quat_log = np.array(quat_log)
+    aoa_log = np.array(aoa_log)
+    beta_log = np.array(beta_log)
+    mass_log = np.array(mass_log)
+    force_log = np.array(force_log)
 
-# Plotting
-plt.subplot(2, 1, 1)
-plt.title("Rocket Burn Profile")
-plt.plot(times, alts, label='Altitude')
-plt.legend()
-plt.grid(True)
+    plt.figure()
+    plt.subplot(1, 3, 1)
+    plt.plot(time_log, force_log[:, 0])
+    plt.grid(True)
 
-plt.subplot(2,1,2)
-plt.plot(times, thrust, label='Temp')
-plt.xlabel("Time (s)")
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.show()
+    plt.subplot(1, 3, 2)
+    plt.plot(time_log, force_log[:, 1])
+    plt.grid(True)
+
+    plt.subplot(1, 3, 3)
+    plt.plot(time_log, vel_log[:, 2])
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+# eng = VehicleModels.RocketEngine()
+# air = EnvironmentalModels.AirProfile()
+# h = []
+# g = []
+# t = 0
+# thrust = []
+# times = []
+# dt = 0.1
+# vals = 30 / dt
+# for x in range(int(vals)):
+#     p = air.getStaticPressure(x)
+#     T = eng.getThrust(t, p)
+#     thrust.append(np.linalg.norm(T))
+#     h.append(x)
+#     times.append(t)
+#
+#     t += dt
+#
+#
+# plt.plot(times,thrust)
+# plt.show()
+
