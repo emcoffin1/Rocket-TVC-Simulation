@@ -246,12 +246,15 @@ class CombustionChamber:
         self.fuel_tank.mass -= mf_used
         self.lox_tank.mass -= mo_used
 
-        fuel_p = self.fuel_tank.P
-        lox_p = self.lox_tank.P
-        ullage_p = self.ullage_tank.P
-
         # STEP 5: Update ullage tank pressure
         self.ullage_tank.gasLeaving(dt=dt, mdot=mdot_tot)
+
+        # Check if ullage tank is balanced with dome regs
+        ullage_p = self.ullage_tank.P
+        if self.lox_reg.outletPressure <= ullage_p or self.fuel_reg.outletPressure <= ullage_p:
+            print("Tanks in equilibrium")
+            self.active = False
+            return np.zeros(3), 0, 0
 
         # STEP 6: Update Chamber Pressure
         self.updateChamberPressure()
@@ -263,7 +266,6 @@ class CombustionChamber:
 
         # Get thrust
         thrust = self.getThrust()
-
 
         return thrust, mdot_f, mdot_o
 
