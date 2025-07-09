@@ -7,6 +7,7 @@ from RegulatorsTanksModels import DomeReg, PropTank
 from models.EnvironmentalModels import AirProfile
 import scipy.optimize
 
+
 class RocketEngine:
     def __init__(self):
         # self.isp = 300
@@ -103,7 +104,7 @@ class Fluids:
 class CombustionChamber:
     def __init__(self, fuel: RP1, lox: LOX, of_ratio: float, Pc: float, eps: float, At: float,
                  air: AirProfile = None, lox_tank: PropTank = None, fuel_tank: PropTank = None,
-                 ullage_tank: UllageGas = None):
+                 ullage_tank: UllageGas = None, lox_reg: DomeReg = None, fuel_reg: DomeReg = None):
 
         # Indicates if the engine is active, will be switched to false on loss of pressurant
         self.active = True
@@ -117,6 +118,10 @@ class CombustionChamber:
         self.lox_tank = lox_tank if lox_tank is not None else PropTank(volume=0.19, fluid=self.lox)
         self.fuel_tank = fuel_tank if fuel_tank is not None else PropTank(volume=0.1, fluid=self.fuel)
         self.ullage_tank = ullage_tank if ullage_tank is not None else UllageGas()
+
+        # Regulators
+        self.fuel_reg = fuel_reg if fuel_reg is not None else DomeReg(outlet_pressure=200e3)
+        self.lox_reg = lox_reg if lox_reg is not None else DomeReg(outlet_pressure=200e3)
 
         # Combustion Chamber Properties
         self.of_ratio = of_ratio
@@ -197,9 +202,8 @@ class CombustionChamber:
 
     def updateChamberPressure(self):
         """Updates chamber pressure using mdot c* / At"""
-        mdot_f, mdot_o = self.getMassFlowRate()
-        mdot_total = mdot_f + mdot_o
-        self.Pc = mdot_total * self.c_star / self.At
+        """Update chamber pressure using the pressure coming out of the regulators"""
+        self.Pc = min(self.ullage_tank.P, self.lox_tank.P, )
 
     def getThrust(self) -> np.ndarray:
         """
@@ -239,21 +243,15 @@ class CombustionChamber:
         mf_used = mdot_f * dt
         mo_used = mdot_o * dt
 
-
-        if mf_mass > mf_mass or mo_used > mo_mass:
-            # Prevent overdraw if near empty
-            dt_actual = min(mf_mass / mdot_f, mo_mass / mdot_o)
-            mf_used = mdot_f * dt_actual
-            mo_used = mdot_o * dt_actual
-            self.active = False
-        else:
-            dt_actual = dt
-
         self.fuel_tank.mass -= mf_used
         self.lox_tank.mass -= mo_used
 
+        fuel_p = self.fuel_tank.P
+        lox_p = self.lox_tank.P
+        ullage_p = self.ullage_tank.P
+
         # STEP 5: Update ullage tank pressure
-        self.ullage_tank.gasLeaving(dt=dt_actual, mdot=mdot_tot)
+        self.ullage_tank.gasLeaving(dt=dt, mdot=mdot_tot)
 
         # STEP 6: Update Chamber Pressure
         self.updateChamberPressure()
@@ -301,11 +299,12 @@ class CombustionChamber:
 
 
             if np.all(thrust_vec == 0):
+                print("thrust=0")
                 break
 
             results.append([time, thrust_vec, mf_mass, mo_mass])
-
-            time += step
+            #print(results)
+            time += dt
         return results
 
     def _get_tank_sizes(self, burn_time: float, fuel_temp: float = 288.15, ox_temp: float = 90.0) -> dict:
@@ -314,12 +313,13 @@ class CombustionChamber:
         :param burn_time: burn duration [s]
         :param fuel_temp: fuel temp for density lookup [K]
         :param ox_temp: oxidizer temp [K]
-        :return: dict with fuel and oxidizer tank volumes in m3
+        :return: dict with fuel and oxidizer tank volumes in m3, mass in kg, and pressure
         """
         mf, mo = self.getMassFlowRate()
 
         rho_fuel = self.fuel.liquidDensity(fuel_temp)
         rho_ox = self.lox.liquidDensity(ox_temp)
+
 
         Vf = (mf * burn_time) / rho_fuel
         Vo = (mo * burn_time) / rho_ox
@@ -328,7 +328,9 @@ class CombustionChamber:
             "fuel_mass": mf * burn_time,
             "oxidizer_mass": mo * burn_time,
             "fuel_volume": Vf,
-            "oxidizer_volume": Vo
+            "oxidizer_volume": Vo,
+            "oxidizer_pressure": 0,
+            "fuel_pressure": 0
         }
 
     def _get_ullage_pressurization(self, burntime: float,
@@ -426,15 +428,15 @@ if __name__ == "__main__":
         Pc=7e6,
         eps=40,
         At=0.00825675768,  # m²
+        ullage_tank=UllageGas(P0=2e8, V0=1.0)
     )
     tank_sizes = chamber._get_tank_sizes(burn_time=30)
     print(f"Fuel Tank: {tank_sizes['fuel_volume']:.2f} m3")
     print(f"Oxidizer Tank: {tank_sizes['oxidizer_volume']:.2f} m3")
 
-    press_data = chamber._get_ullage_pressurization(burntime=60)
+    press_data = chamber._get_ullage_pressurization(burntime=30)
     print(f"Total Pressurant Mass: {press_data['total_pressurant_mass']:.4f} kg")
     print(f"Final Fuel Tank Pressure: {press_data['fuel_tank']['final_pressure']:.2f} Pa")
-
 
     thrust_data = chamber._get_rawthrust_over_time()
 

@@ -24,20 +24,19 @@ class PropTank:
     """
     Model to contain the lox or fuel
     """
-    def __init__(self, volume: float, fluid: object):
+    def __init__(self, volume: float, fluid: object, pressure: float):
         self.volume = volume
         self.fluid = fluid
         self.mass = volume * self.fluid.density_liquid
+        self.R = 8.026
+        self.P = pressure
 
     @property
     def getVolumeFilled(self) -> float:
         """Return volume using m/rho"""
         return self.mass / self.fluid.density_liquid
 
-    @property
-    def getVolumeUllage(self) -> float:
-        """Returns volume of ullage using volume - m / rho"""
-        return self.volume - self.getVolumeFilled
+
 
 
 class InjectorPlate:
