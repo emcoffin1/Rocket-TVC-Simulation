@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import math
 import EnvironmentalModels
-from EngineModels import RocketEngine
+from models.Engine.EngineModels import RocketEngine
 
 def rk4_step(rocket, state, dt):
 
