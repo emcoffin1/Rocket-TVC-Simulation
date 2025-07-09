@@ -40,10 +40,6 @@ class PropTank:
         return self.volume - self.getVolumeFilled
 
 
-
-
-
-
 class InjectorPlate:
     def __init__(self, injector_holes: int = 1, injection_area: float = 0.01, mdot_fuel: float = 0.0, mdot_lox: float = 0.0):
         self.injector_holes = injector_holes

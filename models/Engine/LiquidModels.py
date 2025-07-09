@@ -1,5 +1,6 @@
 from rocketcea.cea_obj import CEA_Obj
 from math import exp
+from warnings import warn
 
 
 class RP1:
@@ -164,13 +165,15 @@ class UllageGas:
     Models gas behavior of the pressurant during blow-down
     Can be isothermal or adiabatic
     """
-    def __init__(self, P0 = 2e6, V0 = 0.01, T0 = 300, R = 296.8, gamma = 1.4,isothermal=True):
+    def __init__(self, P0: float = 2e6, V0: float = 0.01, T0: float = 300, R: float = 296.8, gamma: float = 1.4,
+                 density: float = 1.25,isothermal: float=True):
         """
 
-        :param P0: Initial pressure [Pa]
-        :param V0: Initial volume   [m3]
+        :param P0: Initial gas pressure [Pa]
+        :param V0: Initial tank volume   [m3]
         :param R: Specific gas const
         :param gamma: Heat cap ratio [cp/cv]
+        :param density: Density of Nitrogen [kg/m3]
         :param T0: Initial temp     [K]
         :param isothermal: bool - initially true - if false = adiabatic
         """
@@ -178,7 +181,7 @@ class UllageGas:
         self.V = V0
         self.T = T0
         self.R = R
-        self.gamma = gamma
+        self.density = density
         self.isothermal = isothermal
         self.m = self.P * self.V / (self.R * self.T)
         self.m_used = 0
@@ -216,6 +219,25 @@ class UllageGas:
         self.P, self.V, self.T, = P_new, V_new, T_new
         return P_new
 
+    def gasLeaving(self, dt: float, mdot: float):
+
+        # Get mass leaving using mdot * dt
+        dm = mdot * dt
+
+        # Subtract mass
+        self.m -= dm
+
+        # Check if it's empty
+        if self.m <= 0:
+            self.m = 0
+            warn("Ullage tank is empty")
+
+        else:
+            # Update pressure
+            self.P = self.m * self.R * self.T / self.V
+
+
+
     @property
     def getPressure(self) -> float:
         """Returns current gas pressure [Pa]"""
@@ -243,6 +265,7 @@ class UllageGas:
 
 
 if __name__ == "__main__":
-    f = RP1()
-    g = f.gasProperties[""]
-    print(g["T_c"])
+    f = RP1().gasProperties(1.005,3.2,1.5)
+    l = LOX().gasProperties(1.005,3.2,1.5)
+    print(f)
+    print(l)
