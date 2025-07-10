@@ -155,6 +155,7 @@ class UllageGas:
         self.isothermal = isothermal
         self.m = self.P * self.V / (self.R * self.T)
         self.m_used = 0
+        self.gamma = 1.4    # Specific heat
 
     def gasLeaving(self, dV: float):
         """
@@ -163,13 +164,20 @@ class UllageGas:
         :param dV:
         :return:
         """
+        v_new = self.V + dV  # pressurant now occupies larger space
+
         if self.isothermal:
             # Update pressure using isothermal properties
-            self.V += dV  # pressurant now occupies larger space
-            self.P = self.m * self.R * self.T / self.V
+            # Idea gas law P = vRT / V
+            self.P = self.m * self.R * self.T / v_new
         else:
             # update values using adiabatic properties
-            pass
+            # Isentropic Relations - PV^gamma  -  TV^(gamma - 1)
+            self.T *= (v_new / self.V) ** (1 - self.gamma)
+            self.P *= (v_new / self.V) ** (-self.gamma)
+
+        self.V = v_new
+        print(f"ULLAGE - P: {self.P}  -  T: {self.T}")
 
     @property
     def getPressure(self) -> float:
