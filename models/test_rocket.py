@@ -108,6 +108,9 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
+    # for x in force_log:
+    #     print(x)
+
 # eng = VehicleModels.RocketEngine()
 # air = EnvironmentalModels.AirProfile()
 # h = []
