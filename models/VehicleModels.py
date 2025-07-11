@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import math
 import EnvironmentalModels
-from models.Engine.EngineModels import RocketEngine
+from models.Engine.EngineModels import Engine
 
 def rk4_step(rocket, state, dt):
 
@@ -67,8 +67,8 @@ class Rocket:
         self.wind = EnvironmentalModels.WindProfile()
 
         # -- Vehicle Specific -- #
-        self.engine = RocketEngine()
-        self.structure = RocketStructure(self.engine.burnTime, self.engine.massFlowRate)
+        self.engine = Engine()
+        self.structure = RocketStructure(engine=self.engine)
         self.aerodynamics = RocketAerodynamics(self.air, self.wind)
         self.tvc = RocketTVC()
 
@@ -84,11 +84,11 @@ class Rocket:
 
         ])
 
-    def getDynamics(self, state):
+    def getDynamics(self, state, dt: float):
 
-        a,b,c,d,_,__, static_pres = self.getTotalForce(state)
+        a,b,c,d,_,__, static_pres = self.getTotalForce(state=state, dt=dt)
         force = a + b + c + d
-        pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state)
+        pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state=state)
         # Sum of all accelerations --- a = F/m
         acceleration = force / mass
 
@@ -102,7 +102,10 @@ class Rocket:
         domega = np.zeros(3)
 
         # -- Mass Change -- #
-        dmdt = -self.engine.getMassFlowRate(time, pressure=static_pres)
+        fluid_mass = self.engine.getFluidMass()
+        dmdt = self.structure.liquidMass - fluid_mass
+        self.structure.liquidMass = fluid_mass
+        # dmdt = -self.engine.getMassFlowRate(time, pressure=static_pres)
 
         # -- State Derivative -- #
         # The change in state variables
@@ -119,7 +122,7 @@ class Rocket:
 
         return dstate
 
-    def getTotalForce(self, state):
+    def getTotalForce(self, state, dt: float):
         # -- Constants -- #
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state)
         alt_m = pos[2]
@@ -141,13 +144,15 @@ class Rocket:
 
         # -- Forces -- #
         # Thrust
-        thrust_force_body = self.engine.getThrust(time=time, pressure=stat_pres)
+        thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m)
+        # Thrust_force_body needs to be rotated depending on the TVC angle
+        thrust_force_body = np.array([0.0, 0.0, thrust_mag])
         thrust_force_global = R.from_quat(quat).apply(thrust_force_body)
 
         # Drag
         drag_force = self.aerodynamics.getDragForce(vel_m_s=v_air, rho=rho, cross_area=self.structure.xyPlaneArea,
-                                                    pos=pos, aoa=aoa, beta=beta, burntime=self.engine.burnTime)
-        #print(np.linalg.norm(drag_force))
+                                                    pos=pos, aoa=aoa, beta=beta)
+        # print(np.linalg.norm(drag_force))
 
         # -- SUMS -- #
         # Sum of forces -- must be a vector
@@ -168,15 +173,18 @@ class Rocket:
 
 
 class RocketStructure:
-    def __init__(self, bt_s: float, mfr_kg_s: float):
+    def __init__(self, engine: Engine):
+        self.engine = engine
+
         self.length = 5.4864    # m -- 18 ft
         self.diameter = 0.254   # m -- 10 in
         self.zxPlaneArea = self.length * self.diameter
         self.xyPlaneArea = math.pi / 4 * self.diameter**2
 
-        self.wetMass = 117.8907629  # kg -- 392.182 lbm
+        # self.wetMass = 117.8907629  # kg -- 392.182 lbm
         self.dryMass = 77.5144001   # kg -- 170.890 lbm
-        self.liquidMass = self.wetMass - self.dryMass
+        self.liquidMass = self.engine.getFluidMass()
+        self.wetMass = self.dryMass + self.liquidMass
 
         self.momInertiaYPInitial = 328.69285873  # kg*m2 -- 7800 lb*ft2
         self.momInertiaYPFinal = 206.48653946    # kg*m2 -- 7800 lb*ft2
@@ -184,40 +192,37 @@ class RocketStructure:
         self.cgInitial = 0.28448    # m -- 11.2 ft
         self.cgFinal = 0.29718      # m -- 11.7 ft
 
-        self.burnTime = bt_s
-        self.massFlowRate = mfr_kg_s
-
-    def getCurrentMass(self, time: float, pressure: float):
+    def getCurrentMass(self):
         """
-        Gives current mass as a function of mass flow rate and time
-        :param time:
+        Gives current mass as a function of dry mass and remaining fluid mass
         :return current mass:
         """
-        if time <= self.burnTime:
-            return self.wetMass - self.massFlowRate * time
+        if self.engine.combustion_chamber.active:
+            return self.dryMass + self.engine.getFluidMass()
         else:
             return self.dryMass
 
 
 
-    def getCurrentCM(self, time: float):
+    def getCurrentCM(self):
         """
         Gives current center of mass approximation as it changes over flight
-        :param time:
+        Assumed to be uniform shift and is therefor extracted linearly
         :return:
         """
-        if time <= self.burnTime:
-            return self.cgInitial + (self.cgFinal - self.cgInitial) * (time / self.burnTime)
+        if self.engine.combustion_chamber.active:
+            return (self.cgInitial + ((self.getCurrentMass() - self.wetMass) / (self.dryMass - self.wetMass)) *
+                    (self.cgFinal - self.cgInitial))
         return self.cgFinal
 
-    def getCurrentPYInertia(self, time: float):
+    def getCurrentPYInertia(self):
         """
         Gives current moment of inertia of pitch/yaw axis as it changes over flight
-        :param time:
         :return:
         """
-        if time <= self.burnTime:
-            return self.momInertiaYPInitial + (self.momInertiaYPFinal - self.momInertiaYPInitial) * (time / self.burnTime)
+        if self.engine.combustion_chamber.active:
+            return (self.momInertiaYPInitial + ((self.getCurrentMass() - self.wetMass) / (self.dryMass - self.wetMass))
+                    * (self.momInertiaYPFinal - self.momInertiaYPInitial))
         return self.momInertiaYPFinal
 
 
@@ -254,14 +259,13 @@ class RocketAerodynamics:
             0.2420, 0.2518, 0.2598, 0.2616, 0.2616, 0.2616
         ])
 
-    def getDragCoeff(self, alt: float, mach, aoa: float, beta: float, burntime: float):
+    def getDragCoeff(self, alt: float, mach, aoa: float, beta: float):
         """
         Uses poly fit to determine current drag coefficient
         :param alt:
         :param mach:
         :param aoa: rad
         :param beta:
-        :param burntime:
         :return dragCoeff:
         """
 
@@ -277,12 +281,11 @@ class RocketAerodynamics:
         Uses poly fit to determine current lift coefficient
         :param alt:
         :param vel:
-        :param aoa:
         :return liftCoeff:
         """
         return 1.2
 
-    def getDragForce(self, vel_m_s, pos, rho, cross_area, burntime, aoa, beta):
+    def getDragForce(self, vel_m_s, pos, rho, cross_area, aoa, beta):
         """
         Returns the drag force experienced on the entire vehicle
         Uses: 1/2 rho v^2 A Cl
@@ -290,7 +293,6 @@ class RocketAerodynamics:
         :param pos:
         :param rho:
         :param cross_area:
-        :param burntime:
         :param aoa:
         :param beta:
         :return: [x,y,z] in inertial/global frame
@@ -304,10 +306,8 @@ class RocketAerodynamics:
         # Direction opposite to motion
         drag_direction = -v_air / v_mag  # explicitly say "opposite"
         mach = self.air.getMachNumber(pos[2], v_mag)
-        cd = self.getDragCoeff(pos[2], mach, aoa, beta, burntime)
+        cd = self.getDragCoeff(pos[2], mach, aoa, beta)
         drag_magnitude = 0.5 * rho * v_mag ** 2 * cd * cross_area
-
-
 
         drag = drag_magnitude * drag_direction
         return drag

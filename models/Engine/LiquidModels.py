@@ -128,8 +128,8 @@ class BiProp:
         props["Isp_vac"] = Ivac * 0.3048
 
         # SL ISP with ambient estimate
-        Isp_sea = cls._CEA.estimate_Ambient_Isp(Pc=pc_psi, MR=of_ratio, eps=eps)
-        props["Isp_sea"] = Isp_sea[0] * 0.3048
+        #Isp_sea = cls._CEA.estimate_Ambient_Isp(Pc=pc_psi, MR=of_ratio, eps=eps)
+        #props["Isp_sea"] = Isp_sea[0] * 0.3048
 
         return props
 
@@ -139,42 +139,55 @@ class UllageGas:
     Models gas behavior of the pressurant during blow-down
     Can be isothermal or adiabatic
     """
-    def __init__(self, P0: float = 2e6, V0: float = 0.01, T0: float = 285, R: float = 296.8):
+    def __init__(self, P0: float = 2e6, V0: float = 0.01, T0: float = 285, R: float = 296.8, mdot: float = 4.2134195):
         """
 
-        :param P0: Initial gas pressure     [Pa]
-        :param V0: Initial tank volume      [m3]
+        :param P0: Initial gas pressure             [Pa]
+        :param V0: Initial tank volume              [m3]
         :param R: Specific gas const
-        :param T0: Initial temp             [K]
+        :param T0: Initial temp                     [K]
+        :param mdot: Constant mass flow rate target [kg/s]
         """
         self.P = P0
         self.V = V0
         self.T = T0
         self.R = R
         self.m = self.P * self.V / (self.R * self.T)
+        self.m_total = self.m
         self.m_used = 0
         self.gamma = 1.4    # Specific heat
+        self.mdot = -mdot
 
         self.log_P = []
         self.log_V = []
         self.log_T = []
         self.log_m = []
 
-    def gasLeaving(self, m_req: float):
+    def gasLeaving(self, dm: float, dt: float):
         """
-        Accounts for a volume change as pressurant flows into more space
-        Computes the pressure following volume change
-        :param m_req: mass required to fill the empty volume in the corresponding tank [kg]
+        Accounts for a mass change as pressurant flows into other tank
+        Computes the pressure and temperature following mass change
+        :param dm: mass removed from ullage tank to fill fuel/lox tank [kg]
         :return:
         """
-        if m_req > self.m:
+        if dm > self.m:
             raise ValueError("Not enough gas in ullage tank to maintain regulated pressure.")
 
-        m2 = self.m - m_req
-        self.T *= (m2 / self.m) ** (self.gamma - 1)
-        self.P *= (m2 / self.m) ** self.gamma
-        self.m = m2
-        self.m_used += m_req
+        dm_dt_const = dm/dt
+
+        # Compute change in temperature
+        # dT/dt = -mdot * T/m * gamma+1
+        dT_dt = -dm_dt_const * self.T / self.m * (self.gamma + 1)
+        self.T += dT_dt * dt
+
+        # Compute change in pressure
+        # dP/dt = -mdot * RT/V * gamma
+        dP_dt = -dm_dt_const * (self.R * self.T / self.V) * self.gamma
+        self.P += dP_dt * dt
+        #print(dm)
+
+        self.m -= dm
+        self.m_used += dm
 
         self.log_m.append(self.m)
         self.log_P.append(self.P)

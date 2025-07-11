@@ -26,7 +26,7 @@ if __name__ == "__main__":
 
     for _ in range(steps):
         # Unpack state
-        a, b, c, d, rho, q, _ = rocket.getTotalForce(state)
+        a, b, c, d, rho, q, _ = rocket.getTotalForce(state, dt)
         pos, vel, quat, omega, mass, time, aoa, beta = VehicleModels.unpackStates(state)
 
         force_log.append(a+b+c+d)
