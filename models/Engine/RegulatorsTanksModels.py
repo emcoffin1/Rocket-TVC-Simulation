@@ -28,7 +28,7 @@ class PropTank:
         self.pressure = self.dome_reg.outletPressure
         self.reg_pressure = self.pressure
         self.gas_volume = 0     # No gas in tank
-        self.gas_mass = 1e-8    # small amount of mass to not divide by zero
+        self.gas_mass = 0
         self.gas_temp = self.ullage.T  # Set for first iteration
         self.gas_pressure = 0   # initially starts with zero gas pressures as there is no gas
 
@@ -58,6 +58,7 @@ class PropTank:
         """
         # Volume lost due to fluid outflow
         dv = dm / self.fluid.density_liquid
+        # print(f"{self.fluid.name()}: {dm/dt}")
 
         # Update fluid mass and volume, no effect directly on gas
         self.volume -= dv
@@ -85,7 +86,9 @@ class PropTank:
 
             # Calculate the new temperature of the gas
             # Change in energy formula T1 + ((y * T0 - T1) / m1) * m_new
-            T_new = self.gas_temp + ((self.ullage.gamma * self.ullage.T - self.gas_temp) / self.gas_mass) * m_new
+            T_in = self.ullage.gamma * self.ullage.T
+            T_new = (self.gas_mass * self.gas_temp + m_new * T_in) / (self.gas_mass + m_new)
+            # T_new = self.gas_temp + ((self.ullage.gamma * self.ullage.T - self.gas_temp) / gas_mass_option) * m_new
 
             # Store all new gas variables
             self.gas_temp = T_new
@@ -95,6 +98,7 @@ class PropTank:
 
             # Update ullage tank
             self.ullage.gasLeaving(dm=m_new, dt=dt)
+            #print(f"GAS - P: {self.gas_pressure}  -  T: {self.gas_temp}  -  Mass: {self.gas_mass}  - Volume: {self.gas_volume}")
 
             # Check if blow down now
             if self.ullage.P <= self.reg_pressure:

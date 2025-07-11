@@ -11,13 +11,13 @@ class Engine:
     def __init__(self, pc_desire: float = 551581, safety_margin: float = 0.2):
         self.Pc_desired = pc_desire
         self.safety_margin = safety_margin
-        dome_reg = self.Pc_desired + (self.Pc_desired * self.safety_margin)
+        dome_reg = self.Pc_desired  + (self.Pc_desired * self.safety_margin)
 
         mdot = 4.2134195
 
         lox_reg = DomeReg(outlet_pressure=dome_reg)
         fuel_reg = DomeReg(outlet_pressure=dome_reg)
-        ullage = UllageGas(P0=2810849.764268426, V0=0.05, mdot=mdot)
+        ullage = UllageGas(P0=1989474.5068100474, V0=0.05)
         self.combustion_chamber = CombustionChamber(
             biprop=BiProp(),
             fuel=RP1(),
@@ -30,13 +30,13 @@ class Engine:
             ullage_tank=ullage,
             lox_reg=lox_reg,
             fuel_reg=fuel_reg,
-            lox_tank=PropTank(volume=0.07121094088410931, fluid=LOX(), dome_reg=lox_reg, ullage=ullage),
-            fuel_tank=PropTank(volume=0.05573306216931217, fluid=RP1(), dome_reg=fuel_reg, ullage=ullage)
+            lox_tank=PropTank(volume=0.05625664329844635, fluid=LOX(), dome_reg=lox_reg, ullage=ullage),
+            fuel_tank=PropTank(volume=0.04402911911375661, fluid=RP1(), dome_reg=fuel_reg, ullage=ullage)
         )
 
         self.nozzle = Nozzle(combustion_chamber=self.combustion_chamber)
 
-    def runBurn(self, dt: float, alt_m: float = 0) -> np.ndarray:
+    def runBurn(self, dt: float, alt_m: float = 0) -> float:
         """
         Processes the thrust time by firing combustion chamber for raw value
         and then passing to nozzle for pressure adjustment
@@ -180,7 +180,7 @@ class CombustionChamber:
         mdot = Pc * self.At / self.c_star
         mdot_f = mdot / (1 + self.of_ratio)
         mdot_l = mdot - mdot_f
-
+        # print(Pc, mdot, self.c_star, self.At)
         return mdot_f, mdot_l
 
     def updateExitPressure(self):
@@ -205,6 +205,7 @@ class CombustionChamber:
         """
         x, y = self.getMassFlowRate(feed_pressure)
         self.Pc = (x+y) * self.c_star / self.At
+        # print(self.Pc)
 
     def getThrust(self) -> float:
         """
@@ -317,15 +318,23 @@ class CombustionChamber:
 
         return results
 
-    def _get_tank_sizes(self, burn_time: float, fuel_temp: float, ox_temp) -> dict:
+    def _get_tank_sizes(self, burn_time: float, fuel_temp: float, ox_temp: float, mdot_desired: float = None,
+                        of_ratio: float = None) -> dict:
         """
         Function to compute required fuel and oxidizer tank volumes [m³]
         :param burn_time: burn duration [s]
         :param fuel_temp: fuel temp for density lookup [K]
         :param ox_temp: oxidizer temp [K]
+        :param mdot_desired: Desired mass flow rate
         :return: dict with fuel and oxidizer tank volumes in m3, mass in kg, and pressure
         """
-        mf, mo = self.getMassFlowRate()
+        if (mdot_desired and of_ratio) is not None:
+            mf = mdot_desired / (1 + of_ratio)
+            mo = mdot_desired - mf
+        else:
+            mf, mo = self.getMassFlowRate()
+
+
 
         rho_fuel = self.fuel.liquidDensity(fuel_temp)
         rho_ox = self.lox.liquidDensity(ox_temp)
@@ -343,6 +352,8 @@ class CombustionChamber:
     def _get_ullage_pressurization(self, burntime: float,
                                    target_pressure: float,
                                    pressurant_v: float,
+                                   mdot_desired: float,
+                                   of_ratio: float,
                                    fuel_temp: float = 288.15,
                                    ox_temp: float = 90.0,
                                    pressurant_temp: float = 285.0,
@@ -361,7 +372,8 @@ class CombustionChamber:
         target_pressure = target_pressure or self.Pc
         print(f"Target pressure {target_pressure}")
 
-        tanks = self._get_tank_sizes(burn_time=burntime, fuel_temp=fuel_temp, ox_temp=ox_temp)
+        tanks = self._get_tank_sizes(burn_time=burntime, fuel_temp=fuel_temp, ox_temp=ox_temp,
+                                     mdot_desired=mdot_desired, of_ratio=of_ratio)
         Vf = tanks["fuel_volume"]
         Vo = tanks["oxidizer_volume"]
         mf = tanks["fuel_mass"]
@@ -398,13 +410,15 @@ class CombustionChamber:
             }
         }
 
-    def get_fluid_setup_info(self, burntime: int = 30, pressurant_v: float = 0.05):
+    def get_fluid_setup_info(self, target_pressure: float, mdot_desired: float, of_ratio: float, burntime: int = 30, pressurant_v: float = 0.05):
         """
         Runs a script to determine the information needed for a proper functioning fluids system
         MUST HAVE AT LEAST MASS FLOW RATE, LOX, and FUEL IMPLEMENTED
         :return:
         """
-        press_data = self._get_ullage_pressurization(burntime=burntime, pressurant_v=pressurant_v, target_pressure=self.lox_reg.outletPressure)
+        press_data = self._get_ullage_pressurization(burntime=burntime, pressurant_v=pressurant_v,
+                                                     target_pressure=target_pressure, mdot_desired=mdot_desired,
+                                                     of_ratio=of_ratio)
         print(f"Rec: Fuel volume: {press_data["fuel_tank"]["fuel_volume"]} m3")
         print(f"Rec: Fuel Mass: {press_data["fuel_tank"]["fuel_mass"]} kg")
         print(f"Rec: LOX volume: {press_data["lox_tank"]["lox_volume"]} m3")
@@ -442,7 +456,7 @@ class Nozzle:
 if __name__ == "__main__":
 
     engine = Engine()
-    # engine.combustion_chamber.get_fluid_setup_info()
+    engine.combustion_chamber.get_fluid_setup_info(target_pressure=551581, of_ratio=1.8, mdot_desired=4.2134195, burntime=23.7)
     t = []
     T = []
     alt = []
@@ -455,7 +469,7 @@ if __name__ == "__main__":
             break
 
         y = engine.runBurn(dt=dt, alt_m=0)
-        T.append(y[2])
+        T.append(y)
         t.append(time_val)
         alt.append(x**2)
 
@@ -482,27 +496,27 @@ if __name__ == "__main__":
     #     print(f"Volume: {i} -- Temp: {j}  --  Pres: {k}  --  Mass: {w}")
 
     plt.subplot(3,2,1)
-    plt.plot(logs[0], label="Ullage Volume")
+    # plt.plot(logs[0], label="Ullage Volume")
     # plt.plot(logs[4], label="Liquid Volume")
-    # plt.plot(logs[8], label="Gas Volume")
+    plt.plot(logs[8], label="Gas Volume")
     plt.legend()
 
     plt.subplot(3,2,2)
-    plt.plot(logs[1], label="Ullage Temp")
+    # plt.plot(logs[1], label="Ullage Temp")
     # plt.plot(logs[5], label="Liquid Temp")
-    # plt.plot(logs[9], label="Gas Temp")
+    plt.plot(logs[9], label="Gas Temp")
     plt.legend()
 
     plt.subplot(3,2,3)
-    plt.plot(logs[2], label="Ullage Pressure")
+    # plt.plot(logs[2], label="Ullage Pressure")
     # plt.plot(logs[6], label="Liquid Pressure")
-    # plt.plot(logs[10], label="Gas Pressure")
+    plt.plot(logs[10], label="Gas Pressure")
     plt.legend()
 
     plt.subplot(3,2,4)
-    plt.plot(logs[3], label="Ullage Mass")
+    # plt.plot(logs[3], label="Ullage Mass")
     # plt.plot(logs[7], label="Liquid Mass")
-    # plt.plot(logs[11], label="Gas Mass")
+    plt.plot(logs[11], label="Gas Mass")
     plt.legend()
 
 

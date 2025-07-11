@@ -139,7 +139,7 @@ class UllageGas:
     Models gas behavior of the pressurant during blow-down
     Can be isothermal or adiabatic
     """
-    def __init__(self, P0: float = 2e6, V0: float = 0.01, T0: float = 285, R: float = 296.8, mdot: float = 4.2134195):
+    def __init__(self, P0: float = 2e6, V0: float = 0.01, T0: float = 285, R: float = 296.8):
         """
 
         :param P0: Initial gas pressure             [Pa]
@@ -156,7 +156,6 @@ class UllageGas:
         self.m_total = self.m
         self.m_used = 0
         self.gamma = 1.4    # Specific heat
-        self.mdot = -mdot
 
         self.log_P = []
         self.log_V = []
@@ -177,12 +176,13 @@ class UllageGas:
 
         # Compute change in temperature
         # dT/dt = -mdot * T/m * gamma+1
-        dT_dt = -dm_dt_const * self.T / self.m * (self.gamma + 1)
+        T_prev = self.T
+        dT_dt = -dm_dt_const * T_prev / self.m * (self.gamma + 1)
         self.T += dT_dt * dt
 
         # Compute change in pressure
         # dP/dt = -mdot * RT/V * gamma
-        dP_dt = -dm_dt_const * (self.R * self.T / self.V) * self.gamma
+        dP_dt = -dm_dt_const * (self.R * T_prev / self.V) * self.gamma
         self.P += dP_dt * dt
         #print(dm)
 
@@ -194,7 +194,7 @@ class UllageGas:
         self.log_T.append(self.T)
         self.log_V.append(self.V)
 
-        # print(f"ULLAGE - P: {self.P}  -  T: {self.T}  -  Mass: {self.m}  -  Mass used: {self.m_used}")
+        #print(f"ULLAGE - P: {self.P}  -  T: {self.T}  -  Mass: {self.m}  -  Mass used: {self.m_used}")
 
 
 
