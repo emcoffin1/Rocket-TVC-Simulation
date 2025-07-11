@@ -95,7 +95,7 @@ class PropTank:
             self.gas_volume += dv
             self.gas_pressure = self.reg_pressure
 
-            print(f"{self.fluid.name()} -- dm: {m_new}")
+            # print(f"{self.fluid.name()} -- dm: {m_new}")
 
             # Update ullage tank
             self.ullage.gasLeaving(dm=m_new, dt=dt)
