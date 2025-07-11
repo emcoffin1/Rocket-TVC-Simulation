@@ -9,7 +9,7 @@ if __name__ == "__main__":
     state = rocket.state.copy()
 
     dt = 0.05  # timestep in seconds
-    t_final = 3000.0
+    t_final = 20.0
     steps = int(t_final / dt)
 
     # Logging Containers
@@ -20,7 +20,8 @@ if __name__ == "__main__":
     aoa_log = []
     beta_log = []
     mass_log = []
-    force_log = []
+    thrust_log = []
+    drag_log = []
     density_log = []
     dynamicpress_log = []
 
@@ -29,7 +30,8 @@ if __name__ == "__main__":
         a, b, c, d, rho, q, _ = rocket.getTotalForce(state, dt)
         pos, vel, quat, omega, mass, time, aoa, beta = VehicleModels.unpackStates(state)
 
-        force_log.append(a+b+c+d)
+        thrust_log.append(a+c+b)
+        drag_log.append(b)
         dynamicpress_log.append(q)
         # Log data
         time_log.append(time)
@@ -54,7 +56,8 @@ if __name__ == "__main__":
     aoa_log = np.array(aoa_log)
     beta_log = np.array(beta_log)
     mass_log = np.array(mass_log)
-    force_log = np.array(force_log)
+    thrust_log = np.array(thrust_log)
+    drag_log = np.array(drag_log)
     density_log = np.array(density_log)
     dynamicpress_log = np.array(dynamicpress_log)
 
@@ -75,9 +78,15 @@ if __name__ == "__main__":
     print(f"Apogee: {max(pos_log[:,2])}")
     print(f"Max Velocity: {max(vel_log[:,2])}")
 
+    # print(f"t: {len(time_log)} , T: {len(rocket.thrust_log)}")
+    print("--- EXTRA LOG ---")
+    # for i in mass_log:
+    #     print(i)
+
     plt.figure()
     plt.subplot(2, 2, 1)
-    plt.plot(time_log, force_log)
+    plt.plot(time_log, thrust_log, label="Thrust")
+    # plt.plot(time_log, drag_log, label="Drag")
     plt.xlabel("Forces (N)")
     plt.grid(True)
 
@@ -87,8 +96,8 @@ if __name__ == "__main__":
     plt.grid(True)
 
     plt.subplot(2, 2, 3)
-    plt.plot(time_log, vel_log)
-    plt.xlabel("Vel (m/s)")
+    plt.plot(time_log, mass_log)
+    plt.xlabel("Mass (m/s)")
     plt.grid(True)
 
     plt.subplot(2, 2, 4)

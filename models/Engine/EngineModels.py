@@ -1,8 +1,8 @@
 import numpy as np
 import math
 import matplotlib.pyplot as plt
-from LiquidModels import LOX, RP1, BiProp, UllageGas
-from RegulatorsTanksModels import DomeReg, PropTank
+from models.Engine.LiquidModels import LOX, RP1, BiProp, UllageGas
+from models.Engine.RegulatorsTanksModels import DomeReg, PropTank
 from models.EnvironmentalModels import AirProfile
 import scipy.optimize
 
@@ -56,6 +56,7 @@ class Engine:
         mass_lox = self.combustion_chamber.lox_tank.mass
         mass_fuel = self.combustion_chamber.fuel_tank.mass
         mass_ullage = self.combustion_chamber.ullage_tank.m_total
+        # print(f"FUEL: {mass_fuel} - ULLAGE: {mass_ullage} - LOX: {mass_lox}")
         return mass_lox + mass_fuel + mass_ullage
 
 
@@ -120,6 +121,7 @@ class CombustionChamber:
 
         # Indicates if the engine is active, will be switched to false on loss of fluids or pressure
         self.active = True
+        self.time = 0
 
         # Liquids
         self.lox = lox
@@ -239,6 +241,7 @@ class CombustionChamber:
         if mf_mass <= 0 or mo_mass <= 0:
             self.active = False
             print(f"[SHUTDOWN] Tanks empty: {mf_mass} --- {mo_mass}")
+            print(f"[SHUTDOWN] Burn Stops: {self.time:.2f}s")
             return 0
 
         # STEP 3: Get current flow rates
@@ -275,6 +278,8 @@ class CombustionChamber:
 
         # Get thrust
         thrust = self.getThrust()
+
+        self.time += dt
 
         return thrust
 
@@ -447,15 +452,15 @@ if __name__ == "__main__":
     T = []
     alt = []
 
-    dt = 0.1
+    dt = 0.05
     time_val = 0.0
-    for x in range(round(100 / 0.1)):
+    for x in range(round(3000 / dt)):
         if not engine.combustion_chamber.active:
             print(f"Engine shutdown at {time_val:.2f} seconds")
             break
 
         y = engine.runBurn(dt=dt, alt_m=0)
-        T.append(y[2])
+        T.append(y)
         t.append(time_val)
         alt.append(x**2)
 
@@ -480,6 +485,9 @@ if __name__ == "__main__":
 
     # for i,j,k,w in zip(logs[8], logs[9], logs[10], logs[11]):
     #     print(f"Volume: {i} -- Temp: {j}  --  Pres: {k}  --  Mass: {w}")
+    print(f"t len:{len(t)}   T len:{len(T)}")
+    for i,j in zip(t, T):
+        print(f"t: {i}, T: {j}")
 
     plt.subplot(3,2,1)
     plt.plot(logs[0], label="Ullage Volume")

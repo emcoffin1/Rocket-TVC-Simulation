@@ -84,14 +84,18 @@ class PropTank:
             m_new = self.reg_pressure * dv / (self.ullage.R * self.gas_temp)
 
             # Calculate the new temperature of the gas
-            # Change in energy formula T1 + ((y * T0 - T1) / m1) * m_new
-            T_new = self.gas_temp + ((self.ullage.gamma * self.ullage.T - self.gas_temp) / self.gas_mass) * m_new
+            # Change in energy formula T_new = (m0 *T0 + m1 * T1) / (m0 + m1)
+            # T1 = current gas temp in tanks
+            # T2 = gas temp in ullage tank
+            T_new = ((self.gas_mass * self.gas_temp) + (m_new * self.ullage.T)) / (self.gas_mass + m_new)
 
             # Store all new gas variables
             self.gas_temp = T_new
             self.gas_mass += m_new
             self.gas_volume += dv
             self.gas_pressure = self.reg_pressure
+
+            print(f"{self.fluid.name()} -- dm: {m_new}")
 
             # Update ullage tank
             self.ullage.gasLeaving(dm=m_new, dt=dt)

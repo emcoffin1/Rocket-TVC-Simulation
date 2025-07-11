@@ -2,14 +2,15 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import math
 import EnvironmentalModels
-from models.Engine.EngineModels import Engine
+from models.Engine.EngineModels import *
+from models.Engine.LiquidModels import *
 
 def rk4_step(rocket, state, dt):
 
-    k1 = rocket.getDynamics(state)
-    k2 = rocket.getDynamics(state + 0.5 * dt * k1)
-    k3 = rocket.getDynamics(state + 0.5 * dt * k2)
-    k4 = rocket.getDynamics(state + dt * k3)
+    k1 = rocket.getDynamics(state, dt)
+    k2 = rocket.getDynamics(state + 0.5 * dt * k1, dt)
+    k3 = rocket.getDynamics(state + 0.5 * dt * k2, dt)
+    k4 = rocket.getDynamics(state + dt * k3, dt)
 
     next_state = state + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
 
@@ -86,8 +87,8 @@ class Rocket:
 
     def getDynamics(self, state, dt: float):
 
-        a,b,c,d,_,__, static_pres = self.getTotalForce(state=state, dt=dt)
-        force = a + b + c + d
+        a, b, c, d, _, __, static_pres = self.getTotalForce(state=state, dt=dt)
+        force = a + c + b # + d
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state=state)
         # Sum of all accelerations --- a = F/m
         acceleration = force / mass
@@ -198,6 +199,7 @@ class RocketStructure:
         :return current mass:
         """
         if self.engine.combustion_chamber.active:
+            #print(self.engine.getFluidMass())
             return self.dryMass + self.engine.getFluidMass()
         else:
             return self.dryMass

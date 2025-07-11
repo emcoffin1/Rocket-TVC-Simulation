@@ -158,6 +158,8 @@ class UllageGas:
         self.gamma = 1.4    # Specific heat
         self.mdot = -mdot
 
+        print(f" Loaded: ULLAGE mass: {self.m}")
+
         self.log_P = []
         self.log_V = []
         self.log_T = []
@@ -168,12 +170,15 @@ class UllageGas:
         Accounts for a mass change as pressurant flows into other tank
         Computes the pressure and temperature following mass change
         :param dm: mass removed from ullage tank to fill fuel/lox tank [kg]
+        :param dt: time step [s]
         :return:
         """
         if dm > self.m:
             raise ValueError("Not enough gas in ullage tank to maintain regulated pressure.")
 
         dm_dt_const = dm/dt
+
+        # print(dm)
 
         # Compute change in temperature
         # dT/dt = -mdot * T/m * gamma+1
@@ -184,9 +189,9 @@ class UllageGas:
         # dP/dt = -mdot * RT/V * gamma
         dP_dt = -dm_dt_const * (self.R * self.T / self.V) * self.gamma
         self.P += dP_dt * dt
-        #print(dm)
 
         self.m -= dm
+        #print(self.m)
         self.m_used += dm
 
         self.log_m.append(self.m)
