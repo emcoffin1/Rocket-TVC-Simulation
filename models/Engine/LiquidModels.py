@@ -139,45 +139,51 @@ class UllageGas:
     Models gas behavior of the pressurant during blow-down
     Can be isothermal or adiabatic
     """
-    def __init__(self, P0: float = 2e6, V0: float = 0.01, T0: float = 285, R: float = 296.8, isothermal: float = True):
+    def __init__(self, P0: float = 2e6, V0: float = 0.01, T0: float = 285, R: float = 296.8):
         """
 
         :param P0: Initial gas pressure     [Pa]
         :param V0: Initial tank volume      [m3]
         :param R: Specific gas const
         :param T0: Initial temp             [K]
-        :param isothermal: bool - initially true - if false = adiabatic
         """
         self.P = P0
         self.V = V0
         self.T = T0
         self.R = R
-        self.isothermal = isothermal
         self.m = self.P * self.V / (self.R * self.T)
         self.m_used = 0
         self.gamma = 1.4    # Specific heat
 
-    def gasLeaving(self, dV: float):
+        self.log_P = []
+        self.log_V = []
+        self.log_T = []
+        self.log_m = []
+
+    def gasLeaving(self, m_req: float):
         """
         Accounts for a volume change as pressurant flows into more space
         Computes the pressure following volume change
-        :param dV:
+        :param m_req: mass required to fill the empty volume in the corresponding tank [kg]
         :return:
         """
-        v_new = self.V + dV  # pressurant now occupies larger space
+        if m_req > self.m:
+            raise ValueError("Not enough gas in ullage tank to maintain regulated pressure.")
 
-        if self.isothermal:
-            # Update pressure using isothermal properties
-            # Idea gas law P = vRT / V
-            self.P = self.m * self.R * self.T / v_new
-        else:
-            # update values using adiabatic properties
-            # Isentropic Relations - PV^gamma  -  TV^(gamma - 1)
-            self.T *= (v_new / self.V) ** (1 - self.gamma)
-            self.P *= (v_new / self.V) ** (-self.gamma)
+        m2 = self.m - m_req
+        self.T *= (m2 / self.m) ** (self.gamma - 1)
+        self.P *= (m2 / self.m) ** self.gamma
+        self.m = m2
+        self.m_used += m_req
 
-        self.V = v_new
-        print(f"ULLAGE - P: {self.P}  -  T: {self.T}")
+        self.log_m.append(self.m)
+        self.log_P.append(self.P)
+        self.log_T.append(self.T)
+        self.log_V.append(self.V)
+
+        # print(f"ULLAGE - P: {self.P}  -  T: {self.T}  -  Mass: {self.m}  -  Mass used: {self.m_used}")
+
+
 
     @property
     def getPressure(self) -> float:
