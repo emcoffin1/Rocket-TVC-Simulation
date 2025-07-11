@@ -46,8 +46,8 @@ class PropTank:
         self.log_T_L = []
         self.log_m_L = []
 
-        print(f" Loaded: {self.fluid.name()} mass: {self.mass} kg")
-        print(f" Loaded: {self.fluid.name()} volume: {self.volume} m2")
+        print(f" Loaded: {self.fluid.name()} mass ----- : {self.mass} kg")
+        print(f" Loaded: {self.fluid.name()} volume --- : {self.volume} m2")
 
     def volumeChange(self, dm: float, dt: float):
         """

@@ -162,6 +162,9 @@ class UllageGas:
         self.log_T = []
         self.log_m = []
 
+        print(f" Loaded: Ullage mass -- : {self.m}")
+        print(f" Loaded: Ullage volume  : {self.V}")
+
     def gasLeaving(self, dm: float, dt: float):
         """
         Accounts for a mass change as pressurant flows into other tank
@@ -187,6 +190,7 @@ class UllageGas:
         #print(dm)
 
         self.m -= dm
+        # print(self.m, self.P)
         self.m_used += dm
 
         self.log_m.append(self.m)

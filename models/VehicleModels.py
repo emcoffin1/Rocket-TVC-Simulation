@@ -2,14 +2,14 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import math
 import EnvironmentalModels
-from models.Engine.EngineModels import Engine
+from models.Engine import EngineModels, LiquidModels, RegulatorsTanksModels
 
 def rk4_step(rocket, state, dt):
 
-    k1 = rocket.getDynamics(state)
-    k2 = rocket.getDynamics(state + 0.5 * dt * k1)
-    k3 = rocket.getDynamics(state + 0.5 * dt * k2)
-    k4 = rocket.getDynamics(state + dt * k3)
+    k1 = rocket.getDynamics(state,dt)
+    k2 = rocket.getDynamics(state + 0.5 * dt * k1,dt)
+    k3 = rocket.getDynamics(state + 0.5 * dt * k2,dt)
+    k4 = rocket.getDynamics(state + dt * k3,dt)
 
     next_state = state + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
 
@@ -67,7 +67,7 @@ class Rocket:
         self.wind = EnvironmentalModels.WindProfile()
 
         # -- Vehicle Specific -- #
-        self.engine = Engine()
+        self.engine = EngineModels.Engine(air_profile=self.air)
         self.structure = RocketStructure(engine=self.engine)
         self.aerodynamics = RocketAerodynamics(self.air, self.wind)
         self.tvc = RocketTVC()
@@ -145,6 +145,7 @@ class Rocket:
         # -- Forces -- #
         # Thrust
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m)
+        print(thrust_mag)
         # Thrust_force_body needs to be rotated depending on the TVC angle
         thrust_force_body = np.array([0.0, 0.0, thrust_mag])
         thrust_force_global = R.from_quat(quat).apply(thrust_force_body)
@@ -173,7 +174,7 @@ class Rocket:
 
 
 class RocketStructure:
-    def __init__(self, engine: Engine):
+    def __init__(self, engine: EngineModels.Engine):
         self.engine = engine
 
         self.length = 5.4864    # m -- 18 ft
