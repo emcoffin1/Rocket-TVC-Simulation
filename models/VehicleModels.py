@@ -103,10 +103,10 @@ class Rocket:
         domega = np.zeros(3)
 
         # -- Mass Change -- #
-        fluid_mass = self.engine.getFluidMass()
-        dmdt = self.structure.liquidMass - fluid_mass
-        self.structure.liquidMass = fluid_mass
-        # dmdt = -self.engine.getMassFlowRate(time, pressure=static_pres)
+        # fluid_mass = self.engine.getFluidMass()
+        # dmdt = self.structure.liquidMass - fluid_mass
+        # self.structure.liquidMass = fluid_mass
+        dmdt = -self.structure.getMassChange()
 
         # -- State Derivative -- #
         # The change in state variables
@@ -187,24 +187,30 @@ class RocketStructure:
         self.liquidMass = self.engine.getFluidMass()
         self.wetMass = self.dryMass + self.liquidMass
 
+        self.current_mass = self.wetMass
+
+
         self.momInertiaYPInitial = 328.69285873  # kg*m2 -- 7800 lb*ft2
         self.momInertiaYPFinal = 206.48653946    # kg*m2 -- 7800 lb*ft2
 
         self.cgInitial = 0.28448    # m -- 11.2 ft
         self.cgFinal = 0.29718      # m -- 11.7 ft
 
-    def getCurrentMass(self):
+    def getMassChange(self):
         """
-        Gives current mass as a function of dry mass and remaining fluid mass
+        Gives mass change as a function of dry mass and remaining fluid mass
         :return current mass:
         """
         if self.engine.combustion_chamber.active:
             #print(self.engine.getFluidMass())
-            return self.dryMass + self.engine.getFluidMass()
+            val = self.dryMass + self.engine.getFluidMass()
+            dm = self.current_mass - val
+            self.current_mass = val
+            #print(dm)
+            # print(self.current_mass)
+            return dm
         else:
             return self.dryMass
-
-
 
     def getCurrentCM(self):
         """
@@ -213,8 +219,10 @@ class RocketStructure:
         :return:
         """
         if self.engine.combustion_chamber.active:
-            return (self.cgInitial + ((self.getCurrentMass() - self.wetMass) / (self.dryMass - self.wetMass)) *
+            val = (self.cgInitial + ((self.getCurrentMass() - self.wetMass) / (self.dryMass - self.wetMass)) *
                     (self.cgFinal - self.cgInitial))
+            # print(val)
+            return  val
         return self.cgFinal
 
     def getCurrentPYInertia(self):

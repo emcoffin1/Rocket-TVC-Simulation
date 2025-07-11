@@ -9,7 +9,7 @@ if __name__ == "__main__":
     state = rocket.state.copy()
 
     dt = 0.05  # timestep in seconds
-    t_final = 20.0
+    t_final = 100.0
     steps = int(t_final / dt)
 
     # Logging Containers
@@ -80,8 +80,8 @@ if __name__ == "__main__":
 
     # print(f"t: {len(time_log)} , T: {len(rocket.thrust_log)}")
     print("--- EXTRA LOG ---")
-    # for i in mass_log:
-    #     print(i)
+    for i,t in zip(mass_log, time_log):
+        print(t, round(i,2))
 
     plt.figure()
     plt.subplot(2, 2, 1)

@@ -10,6 +10,7 @@ class RP1:
     density_liquid      = 810.0     # kg/m3
     viscosity_liquid    = 170e-3    # Pa*s
     flash_point         = 322.0     # K
+    storing_temp        = 288       # K
 
     # Gas-phase base constants
     _CEA = CEA_Obj(oxName="LOX", fuelName='RP-1')
@@ -55,6 +56,7 @@ class LOX:
     density_liquid      = 1141.0        # kg/m3
     viscosity_liquid    = 0.2e-3        # Pa*s
     boiling_point       = 90.2          # K
+    storing_temp        = 90            # K
 
     # Gas-phase base constants
     _CEA = CEA_Obj(oxName="LOX", fuelName='RP-1')
@@ -173,8 +175,6 @@ class UllageGas:
         :param dt: time step [s]
         :return:
         """
-        if dm > self.m:
-            raise ValueError("Not enough gas in ullage tank to maintain regulated pressure.")
 
         dm_dt_const = dm/dt
 

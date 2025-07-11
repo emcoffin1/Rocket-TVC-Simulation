@@ -98,7 +98,7 @@ class PropTank:
             # print(f"{self.fluid.name()} -- dm: {m_new}")
 
             # Update ullage tank
-            self.ullage.gasLeaving(dm=m_new, dt=dt)
+            #self.ullage.gasLeaving(dm=m_new, dt=dt)
 
             # Check if blow down now
             if self.ullage.P <= self.reg_pressure:
