@@ -1,4 +1,3 @@
-import numpy as np
 import math
 import matplotlib.pyplot as plt
 from models.Engine.LiquidModels import LOX, RP1, BiProp, UllageGas
@@ -125,7 +124,7 @@ class CombustionChamber:
         :param vacuum: bool
         :return:
         """
-        return self.isp_vac if vacuum else self.isp_sea
+        # return self.isp_vac if vacuum else self.isp_sea
 
     def getMassFlowRate(self, pc: float = None) -> (float, float):
         """
@@ -219,8 +218,8 @@ class CombustionChamber:
         mo_used = mdot_o * dt
 
         # STEP 5: Update liquid tank pressure
-        self.lox_tank.volumeChange(dm=mo_used, time=self.time)
-        self.fuel_tank.volumeChange(dm=mf_used, time=self.time)
+        self.lox_tank.volumeChange(dm=mo_used, time=self.time, dt=dt)
+        self.fuel_tank.volumeChange(dm=mf_used, time=self.time, dt=dt)
 
         # STEP 6: Update ullage tank
         dm_f = self.fuel_tank.dm
@@ -233,7 +232,7 @@ class CombustionChamber:
 
         # STEP 7: Update Chamber Pressure
         # Get the pressure that the fuel is being pushed out at
-        feed_pressure = max(self.lox_tank.gas_pressure, self.fuel_tank.gas_pressure)
+        feed_pressure = max(self.lox_tank.ull_pressure, self.fuel_tank.ull_pressure)
         # Update the chamber pressure using that
         self.updateChamberPressure(feed_pressure)
 
@@ -439,11 +438,27 @@ if __name__ == "__main__":
             engine.combustion_chamber.fuel_tank.log_T_L,        # 5
             engine.combustion_chamber.fuel_tank.log_P_L,        # 6
             engine.combustion_chamber.fuel_tank.log_m_L,        # 7
+            engine.combustion_chamber.fuel_tank.log_T_Lg,       # 8
+            engine.combustion_chamber.fuel_tank.log_P_Lg,       # 9
+            engine.combustion_chamber.fuel_tank.log_m_Lg,       # 10
+            engine.combustion_chamber.fuel_tank.log_T_U,        # 11
+            engine.combustion_chamber.fuel_tank.log_P_U,        # 12
+            engine.combustion_chamber.fuel_tank.log_m_U,        # 13
+            engine.combustion_chamber.fuel_tank.log_V_total_gas,  # 14
+            engine.combustion_chamber.fuel_tank.log_P_total_gas,  # 15
 
-            engine.combustion_chamber.lox_tank.log_V_U,         # 8
-            engine.combustion_chamber.lox_tank.log_T_U,         # 9
-            engine.combustion_chamber.lox_tank.log_P_U,         # 10
-            engine.combustion_chamber.lox_tank.log_m_U,         # 11
+            engine.combustion_chamber.lox_tank.log_V_L,        # 16
+            engine.combustion_chamber.lox_tank.log_T_L,        # 17
+            engine.combustion_chamber.lox_tank.log_P_L,        # 18
+            engine.combustion_chamber.lox_tank.log_m_L,        # 19
+            engine.combustion_chamber.lox_tank.log_T_Lg,       # 20
+            engine.combustion_chamber.lox_tank.log_P_Lg,       # 21
+            engine.combustion_chamber.lox_tank.log_m_Lg,       # 22
+            engine.combustion_chamber.lox_tank.log_T_U,        # 23
+            engine.combustion_chamber.lox_tank.log_P_U,        # 24
+            engine.combustion_chamber.lox_tank.log_m_U,        # 25
+            engine.combustion_chamber.lox_tank.log_V_total_gas,  # 26
+            engine.combustion_chamber.lox_tank.log_P_total_gas,  # 27
 
             ]
 
@@ -453,32 +468,32 @@ if __name__ == "__main__":
     # for i,j in zip(t, T):
     #     print(f"t: {i}, T: {j}")
 
-    # plt.subplot(3,2,1)
-    # plt.plot(logs[0], label="Ullage Volume")
-    # # plt.plot(logs[4], label="Liquid Volume")
+    plt.subplot(3,2,1)
+    plt.plot(logs[0], label="Ullage Volume")
+    plt.plot(logs[26], label="Total Gas Volume")
     # plt.plot(logs[8], label="Gas Volume")
-    # plt.legend()
-    #
-    # plt.subplot(3,2,2)
-    # plt.plot(logs[1], label="Ullage Temp")
-    # # plt.plot(logs[5], label="Liquid Temp")
+    plt.legend()
+
+    plt.subplot(3,2,2)
+    plt.plot(logs[1], label="Ullage Temp")
+    # plt.plot(logs[5], label="Liquid Temp")
     # plt.plot(logs[9], label="Gas Temp")
-    # plt.legend()
-    #
-    # plt.subplot(3,2,3)
-    # plt.plot(logs[2], label="Ullage Pressure")
-    # # plt.plot(logs[6], label="Liquid Pressure")
+    plt.legend()
+
+    plt.subplot(3,2,3)
+    plt.plot(logs[2], label="Ullage Pressure")
+    plt.plot(logs[27], label="Total Liquid Pressure")
     # plt.plot(logs[10], label="Gas Pressure")
-    # plt.legend()
-    #
-    # plt.subplot(3,2,4)
-    # plt.plot(logs[3], label="Ullage Mass")
-    # # plt.plot(logs[7], label="Liquid Mass")
+    plt.legend()
+
+    plt.subplot(3,2,4)
+    plt.plot(logs[3], label="Ullage Mass")
+    # plt.plot(logs[7], label="Liquid Mass")
     # plt.plot(logs[11], label="Gas Mass")
-    # plt.legend()
-    #
-    #
-    # plt.subplot(3,2,5)
+    plt.legend()
+
+
+    plt.subplot(3,2,5)
     plt.plot(t, T, label="Thrust ")
     plt.legend()
 

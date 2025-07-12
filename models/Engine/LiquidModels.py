@@ -9,6 +9,11 @@ class RP1:
     # Liquid Properties (at STP)
     density_liquid      = 810.0     # kg/m3
     viscosity_liquid    = 170e-3    # Pa*s
+    R_vapor             = 48.9
+    boiling_point       = 200+273.15
+    vapor_coefficient   = 2291
+    vapor_energy        = 2.51e5
+    heat_exchange_coefficient = 10  # W/K
     flash_point         = 322.0     # K
     storing_temp        = 288       # K
 
@@ -54,13 +59,15 @@ class LOX:
     """
     # Liquid Properties (at STP)
     density_liquid      = 1141.0        # kg/m3
+    R_vapor  = 259.8
+    vapor_coefficient   = 653           # cv
+    gamma_vapor         = 1.3
+    heat_exchange_coefficient = 10       # W/K
     viscosity_liquid    = 0.2e-3        # Pa*s
     boiling_point       = 90.2          # K
-    storing_temp        = 90            # K
-
-    # Gas-phase base constants
-    _CEA = CEA_Obj(oxName="LOX", fuelName='RP-1')
-
+    vapor_energy        = 213000        # J/kg
+    # storing_temp        = 90            # K
+    storing_temp = 90.3
     @staticmethod
     def name():
         return "LOX"
@@ -159,9 +166,10 @@ class UllageGas:
         self.m_used = 0
         self.gamma = 1.4    # Specific heat
         self.mdot = -mdot
+        self.vapor_coefficient  = 743
 
-        print(f" Loaded: ULLAGE mass:       {self.m}")
-        print(f" Loaded: ULLAGE pressure:   {self.P}")
+        # print(f" Loaded: ULLAGE mass:       {self.m}")
+        # print(f" Loaded: ULLAGE pressure:   {self.P}")
 
         self.log_P = []
         self.log_V = []
@@ -216,7 +224,7 @@ class UllageGas:
         # Update mass
         self.m -= dm
         self.m_used += dm
-
+        # print(f"Ullage mass: {self.m}, Ullage temp: {self.T}")
         # Update pressure using ideal gas law (derived from current T and m)
         if self.m > 0:
             self.P = self.m * self.R * self.T / self.V
