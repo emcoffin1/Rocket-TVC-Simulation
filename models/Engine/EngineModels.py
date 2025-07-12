@@ -36,7 +36,7 @@ class Engine:
 
         self.nozzle = Nozzle(combustion_chamber=self.combustion_chamber)
 
-    def runBurn(self, dt: float, alt_m: float = 0) -> np.ndarray:
+    def runBurn(self, dt: float, alt_m: float = 0):
         """
         Processes the thrust time by firing combustion chamber for raw value
         and then passing to nozzle for pressure adjustment
@@ -182,7 +182,7 @@ class CombustionChamber:
         mdot = Pc * self.At / self.c_star
         mdot_f = mdot / (1 + self.of_ratio)
         mdot_l = mdot - mdot_f
-        #print(mdot)
+        # print(mdot_f, mdot_l)
         return mdot_f, mdot_l
 
     def updateExitPressure(self):
@@ -252,12 +252,9 @@ class CombustionChamber:
 
         #print(f"MDOT_F: {mdot_f}  -  MDOT_O: {mdot_o}  -  dt: {dt}")
 
-        # STEP 4: Subtract mass from tanks
+        # STEP 4: Find liquid mass change in each tank
         mf_used = mdot_f * dt
         mo_used = mdot_o * dt
-
-        self.fuel_tank.mass -= mf_used
-        self.lox_tank.mass -= mo_used
 
         # STEP 5: Update liquid tank pressure
         self.lox_tank.volumeChange(dm=mo_used, dt=dt)
@@ -299,6 +296,7 @@ class CombustionChamber:
 
         # Only supersonic exit flows are valid (e.g., M_e > 1)
         val = scipy.optimize.brentq(func, 1.01, 10.0)
+        print(val)
         return val
 
     def _get_rawthrust_over_time(self, time_max=10, dt=1.0):
