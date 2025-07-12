@@ -34,6 +34,7 @@ class PropTank:
 
         # State
         self.blow_down = False
+        self.dm = 0  # The amount of change each cycle
 
         # Logging
         self.log_P_U = []
@@ -49,17 +50,21 @@ class PropTank:
         print(f" Loaded: {self.fluid.name()} mass: {self.mass} kg")
         print(f" Loaded: {self.fluid.name()} volume: {self.volume} m2")
 
-    def volumeChange(self, dm: float, dt: float):
+    def volumeChange(self, dm: float, time: float):
         """
         Models gas entering the tank as liquid exits or the behavior of gas during blowdown
         :param dm: change in mass from liquid flow  [kg]
         :param dt: time step                        [s]
         :return:
         """
+
+        # Update fluid mass and volume, no effect directly on gas
+        if self.mass < dm:
+            dm = self.mass
+
         # Volume lost due to fluid outflow
         dv = dm / self.fluid.density_liquid
 
-        # Update fluid mass and volume, no effect directly on gas
         self.volume -= dv
         self.mass -= dm
 
@@ -71,6 +76,7 @@ class PropTank:
             # T = T (V1 / V2) ^ y-1 (GAS)
             new_T = self.gas_temp * (self.gas_volume / (self.gas_volume + dv)) ** (self.ullage.gamma - 1)
 
+            # print(f"{self.fluid.name()} Pressure: {new_P:.2f}  -  Temp: {new_T:.2f}")
             # Store all new gas variables
             self.gas_pressure = new_P
             self.gas_temp = new_T
@@ -82,6 +88,8 @@ class PropTank:
             # Calculate the mass required to offset the volume lost
             # m = PV/RT (GAS)
             m_new = self.reg_pressure * dv / (self.ullage.R * self.gas_temp)
+            # Set the amount of mass required to offset
+            self.dm = m_new
 
             # Calculate the new temperature of the gas
             # Change in energy formula T_new = (m0 *T0 + m1 * T1) / (m0 + m1)
@@ -96,13 +104,13 @@ class PropTank:
             self.gas_pressure = self.reg_pressure
 
             # print(f"{self.fluid.name()} -- dm: {m_new}")
-
+            # print(f"Regulated Pressure: {self.reg_pressure} -- Ullage Pressure: {self.ullage.P} -- Ullage Mass: {self.ullage.m}")
             # Update ullage tank
             #self.ullage.gasLeaving(dm=m_new, dt=dt)
 
             # Check if blow down now
-            if self.ullage.P <= self.reg_pressure:
-                print("[STATE CHANGE] Entering blow-down")
+            if self.ullage.P <= self.reg_pressure or self.ullage.m < 0:
+                print(f"[STATE CHANGE] Entering blow-down at: {time}s")
                 self.blow_down = True
 
         self.log_P_U.append(self.gas_pressure)

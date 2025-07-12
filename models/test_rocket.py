@@ -3,13 +3,44 @@ import VehicleModels
 import EnvironmentalModels
 import matplotlib.pyplot as plt
 
+
+def print_results(time, pos, vel, thrust, drag, q):
+
+    print("=" * 60)
+    print("FLIGHT ENDED")
+
+    # Altitude
+    max_alt_i = np.argmax(pos[:, 2])  # correct array passed in
+    max_alt = pos[max_alt_i, 2]
+    print(f"Max Altitude:   {max_alt:.3f} m at Time: {time[max_alt_i]:.3f}s")
+
+    # Velocity
+    vel_norm = np.linalg.norm(vel, axis=1)
+    max_vel = np.max(vel_norm)
+    max_vel_time_i = np.argmax(vel_norm)
+    print(f"Max Velocity:   {max_vel:.3f} m/s at Time: {time[max_vel_time_i]:.3f}s")
+
+    # Determine max pressure
+    max_q = 0
+    max_q_index = 0
+    for i in range(1, len(pos[:, 2])):
+        if pos[i, 2] < pos[i - 1, 2]:  # Descent started
+            break
+        if q[i] > max_q:
+            max_q = q[i]
+            max_q_index = i
+
+    print(f"Max Pressure:   {max_q:.2f} Pa at Time: {time[max_q_index]:.2f} s at Altitude: {pos[max_q_index, 2]:.2f} m")
+
+
+
 if __name__ == "__main__":
 
     rocket = VehicleModels.Rocket()
     state = rocket.state.copy()
 
     dt = 0.05  # timestep in seconds
-    t_final = 100.0
+    t_final = 6000.0
     steps = int(t_final / dt)
 
     # Logging Containers
@@ -27,10 +58,10 @@ if __name__ == "__main__":
 
     for _ in range(steps):
         # Unpack state
-        a, b, c, d, rho, q, _ = rocket.getTotalForce(state, dt)
+        a, b, c, d, rho, q, _ = rocket.getTotalForce(state, dt, side_effect=False)
         pos, vel, quat, omega, mass, time, aoa, beta = VehicleModels.unpackStates(state)
-
-        thrust_log.append(a+c+b)
+        # print(time, ", ", a[2])
+        thrust_log.append(b)
         drag_log.append(b)
         dynamicpress_log.append(q)
         # Log data
@@ -61,75 +92,34 @@ if __name__ == "__main__":
     density_log = np.array(density_log)
     dynamicpress_log = np.array(dynamicpress_log)
 
-    max_q = 0
-    max_q_index = 0
+    print_results(time=time_log, pos=pos_log, vel=vel_log, thrust=thrust_log, drag=drag_log, q=dynamicpress_log)
 
-    # Determine max pressure
-    for i in range(1, len(pos_log[:, 2])):
-        if pos_log[i, 2] < pos_log[i - 1, 2]:  # Descent started
-            break
-        if dynamicpress_log[i] > max_q:
-            max_q = dynamicpress_log[i]
-            max_q_index = i
-
-    print(
-        f"Max Q (ascent only): {max_q:.2f} Pa at t = {time_log[max_q_index]:.2f} s, alt = {pos_log[max_q_index, 2]:.2f} m")
-
-    print(f"Apogee: {max(pos_log[:,2])}")
-    print(f"Max Velocity: {max(vel_log[:,2])}")
-
-    # print(f"t: {len(time_log)} , T: {len(rocket.thrust_log)}")
     print("--- EXTRA LOG ---")
-    for i,t in zip(mass_log, time_log):
-        print(t, round(i,2))
+    # for i,t in zip(mass_log, time_log):
+    #     print(t, round(i,2))
 
     plt.figure()
     plt.subplot(2, 2, 1)
     plt.plot(time_log, thrust_log, label="Thrust")
-    # plt.plot(time_log, drag_log, label="Drag")
+    # plt.plot(rocket.drags, label="Drag")
     plt.xlabel("Forces (N)")
     plt.grid(True)
 
     plt.subplot(2, 2, 2)
-    plt.plot(time_log, pos_log)
+    plt.plot(time_log, pos_log*3)
     plt.xlabel("Alt (m)")
     plt.grid(True)
 
     plt.subplot(2, 2, 3)
-    plt.plot(time_log, mass_log)
-    plt.xlabel("Mass (m/s)")
+    plt.plot(time_log, vel_log)
+    plt.xlabel("Velocity (m/s)")
     plt.grid(True)
 
     plt.subplot(2, 2, 4)
-    plt.plot(time_log, dynamicpress_log)
-    plt.xlabel("Dynamic Pressure (kPa)")
+    plt.plot(time_log, mass_log)
+    plt.xlabel("Mass Change")
     plt.grid(True)
 
     plt.tight_layout()
     plt.show()
-
-    # for x in force_log:
-    #     print(x)
-
-# eng = VehicleModels.RocketEngine()
-# air = EnvironmentalModels.AirProfile()
-# h = []
-# g = []
-# t = 0
-# thrust = []
-# times = []
-# dt = 0.1
-# vals = 30 / dt
-# for x in range(int(vals)):
-#     p = air.getStaticPressure(x)
-#     T = eng.getThrust(t, p)
-#     thrust.append(np.linalg.norm(T))
-#     h.append(x)
-#     times.append(t)
-#
-#     t += dt
-#
-#
-# plt.plot(times,thrust)
-# plt.show()
 

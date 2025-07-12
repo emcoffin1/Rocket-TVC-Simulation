@@ -17,7 +17,7 @@ class Engine:
 
         lox_reg = DomeReg(outlet_pressure=dome_reg)
         fuel_reg = DomeReg(outlet_pressure=dome_reg)
-        ullage = UllageGas(P0=932818.2330, V0=0.05, mdot=mdot)
+        ullage = UllageGas(m0=1.6232, V0=0.05, mdot=mdot)
         self.combustion_chamber = CombustionChamber(
             biprop=BiProp(),
             fuel=RP1(),
@@ -36,7 +36,7 @@ class Engine:
 
         self.nozzle = Nozzle(combustion_chamber=self.combustion_chamber)
 
-    def runBurn(self, dt: float, alt_m: float = 0):
+    def runBurn(self, dt: float, alt_m: float = 0, side_effect: bool = True):
         """
         Processes the thrust time by firing combustion chamber for raw value
         and then passing to nozzle for pressure adjustment
@@ -44,9 +44,15 @@ class Engine:
         :param alt_m: current altitude [m]
         :return:
         """
-        raw_thrust = self.combustion_chamber.burnStep(dt=dt)
-        adjusted_thrust = self.nozzle.getThrust(thrust=raw_thrust, alt_m=alt_m)
-        return adjusted_thrust
+        if self.combustion_chamber.active:
+            raw_thrust = self.combustion_chamber.burnStep(dt=dt, side_effect=side_effect)
+            adjusted_thrust = self.nozzle.getThrust(thrust=raw_thrust, alt_m=alt_m)
+            if side_effect and adjusted_thrust < 0:
+                self.combustion_chamber.active = False
+                return 0.0
+            return adjusted_thrust
+        else:
+            return 0.0
 
     def getFluidMass(self) -> float:
         """
@@ -58,54 +64,6 @@ class Engine:
         mass_ullage = self.combustion_chamber.ullage_tank.m_total
         # print(f"FUEL: {mass_fuel} - ULLAGE: {mass_ullage} - LOX: {mass_lox}")
         return mass_lox + mass_fuel + mass_ullage
-
-
-# class RocketEngine:
-#     def __init__(self):
-#         # self.isp = 300
-#         self.massFlowRate = 4.2134195   # average mdot [kg/s]
-#         self.burnTime = 23.7            # [s]
-#         self.totalImpulse = 210684      # [N-s]
-#
-#         self.chamberExitRatio = 1/8
-#
-#     def getThrust(self, time: float, pressure: float) -> np.ndarray:
-#         if time < self.burnTime:
-#
-#             thrust = np.polyval([0.000127581, -0.0164375, 0.92882, -36.2125, 1998.08], time)
-#             Pc = self.getChamberPressure(time)
-#             Pe = Pc / 8
-#             T = thrust * 4.448 + (Pe*6894.76 - pressure) * (5.362**2/4*math.pi/39.37**2) # lbf * N/lbf
-#             return np.array([0, 0, T])
-#         else:
-#             return np.zeros(3)
-#
-#     def getMassFlowRate(self, time: float, pressure: float) -> float:
-#         if time <= self.burnTime:
-#             # 1) get current thrust
-#             thrust_vec = self.getThrust(time, pressure)
-#             F = np.linalg.norm(thrust_vec)
-#
-#             # 2) compute total propellant mass
-#             m_prop = self.massFlowRate * self.burnTime
-#
-#             # 3) scale F(t) so integral mdot = m_prop
-#             val = F * (m_prop / self.totalImpulse)
-#             print(val)
-#             return val
-#         return 0.0
-#
-#     def getChamberPressure(self, time: float):
-#         return np.polyval([5.10325e-06, -0.000657499, 0.0371528, -1.4485, 79.9233], time)
-#
-#     def getExitPressure(self, time: float):
-#         return self.getChamberPressure(time) * self.chamberExitRatio
-#
-#     def getPropUsed(self, time: float):
-#         return min(self.massFlowRate * time, self.massFlowRate * self.burnTime)
-#
-#     def getRemainingProp(self, time: float):
-#         return max(0.0, self.massFlowRate * self.burnTime - self.getPropUsed(time))
 
 
 class CombustionChamber:
@@ -222,7 +180,7 @@ class CombustionChamber:
         F = mdot * self.Ve
         return F
 
-    def burnStep(self, dt: float) -> float:
+    def burnStep(self, dt: float, side_effect: bool = True) -> float:
         """
         An iteration of time step, changes the mass in each tank, returns the RAW thrust,
         will return no thrust if tanks are empty
@@ -232,8 +190,12 @@ class CombustionChamber:
         if not self.active:
             self.Pc = 0
             self.mdot = 0
-            #print("Engine deactivated")
+            # print("Engine deactivated")
             return 0
+
+        if not side_effect:
+            # Return estimated thrust
+            return self.getThrust()
 
         # STEP 1: Get fuel mass in tanks
         mf_mass = self.fuel_tank.mass
@@ -250,21 +212,25 @@ class CombustionChamber:
         # STEP 3: Get current flow rates
         mdot_f, mdot_o = self.getMassFlowRate()
 
-        #print(f"MDOT_F: {mdot_f}  -  MDOT_O: {mdot_o}  -  dt: {dt}")
+        # print(f"MDOT_F: {mdot_f}  -  MDOT_O: {mdot_o}  -  dt: {dt}")
 
         # STEP 4: Find liquid mass change in each tank
         mf_used = mdot_f * dt
         mo_used = mdot_o * dt
 
         # STEP 5: Update liquid tank pressure
-        self.lox_tank.volumeChange(dm=mo_used, dt=dt)
-        self.fuel_tank.volumeChange(dm=mf_used, dt=dt)
+        self.lox_tank.volumeChange(dm=mo_used, time=self.time)
+        self.fuel_tank.volumeChange(dm=mf_used, time=self.time)
 
         # STEP 6: Update ullage tank
-        if (self.lox_tank.blow_down or self.fuel_tank.blow_down):
-            self.ullage_tank.gasLeaving(dm=(mo_used+mf_used), dt=dt)
+        dm_f = self.fuel_tank.dm
+        dm_l = self.lox_tank.dm
+        # print(f"Fuel: {dm_f}  --  LOX: {dm_l}")
+        if not (self.lox_tank.blow_down or self.fuel_tank.blow_down):
+            self.ullage_tank.gasLeaving(dm=(dm_l + dm_f), dt=dt)
+        else:
+            self.ullage_tank.gasLeaving(dm=0, dt=dt)
 
-        # print(feed_pressure)
         # STEP 7: Update Chamber Pressure
         # Get the pressure that the fuel is being pushed out at
         feed_pressure = max(self.lox_tank.gas_pressure, self.fuel_tank.gas_pressure)
@@ -276,6 +242,10 @@ class CombustionChamber:
 
         # Get thrust
         thrust = self.getThrust()
+        if thrust < 0:
+            self.active = False
+            return 0
+        # print(thrust)
 
         self.time += dt
 
@@ -296,7 +266,6 @@ class CombustionChamber:
 
         # Only supersonic exit flows are valid (e.g., M_e > 1)
         val = scipy.optimize.brentq(func, 1.01, 10.0)
-        print(val)
         return val
 
     def _get_rawthrust_over_time(self, time_max=10, dt=1.0):
@@ -357,10 +326,11 @@ class CombustionChamber:
         v_o = tank_sizing["lox_volume"]
 
         # Using ideal gas law -- m = PV / RT
-        m_ullage_f = pressure_target * v_f / (self.ullage_tank.R * self.ullage_tank.T)
-        m_ullage_o = pressure_target * v_o / (self.ullage_tank.R * self.ullage_tank.T)
+        m_ullage_f  = pressure_target * v_f / (self.ullage_tank.R * self.ullage_tank.T)
+        m_ullage_o  = pressure_target * v_o / (self.ullage_tank.R * self.ullage_tank.T)
+        m_ullage    = pressure_target * ullage_volume / (self.ullage_tank.R * self.ullage_tank.T)
 
-        total_ullage_mass = m_ullage_o + m_ullage_f
+        total_ullage_mass = m_ullage_o + m_ullage_f + m_ullage
 
         # Using ideal gas law -- P = mRT / V
         ullage_pressure = total_ullage_mass * self.ullage_tank.R * self.ullage_tank.T / ullage_volume
@@ -395,6 +365,7 @@ class CombustionChamber:
         print(f"RECOMMENDED -- LOX MASS:          {info['lox_mass']:.4f} kg")
         print(f"RECOMMENDED -- LOX VOLUME:        {info['lox_volume']:.4f} m3")
         print(f"RECOMMENDED -- NITROGEN MASS:     {info['nitrogen_mass']:.4f} kg")
+        print(f"RECOMMENDED -- NITROGEN MASS(adj):{1.85*info['nitrogen_mass']:.4f} kg")
         print(f"RECOMMENDED -- NITROGEN PRESSURE: {info['nitrogen_pressure']:.4f} Pa")
         print("=" * 15)
 
@@ -428,25 +399,36 @@ class Nozzle:
 if __name__ == "__main__":
 
     engine = Engine()
-    engine.combustion_chamber.get_fluid_setup(burntime=20, ullage_volume=0.05, pressure_target=551581, of_ratio_target=1.8,
-                                              mdot_target=4.21,)
+    # engine.combustion_chamber.get_fluid_setup(burntime=20, ullage_volume=0.05, pressure_target=551581, of_ratio_target=1.8,
+    #                                           mdot_target=4.21,)
     t = []
     T = []
     alt = []
 
-    dt = 0.05
+    dt = 0.1
     time_val = 0.0
-    for x in range(round(3000 / dt)):
-        if not engine.combustion_chamber.active:
-            print(f"Engine shutdown at {time_val:.2f} seconds")
-            break
-
-        y = engine.runBurn(dt=dt, alt_m=0)
+    # for x in range(round(3000 / dt)):
+    #     if not engine.combustion_chamber.active:
+    #         print(f"Engine shutdown at {time_val:.2f} seconds")
+    #         break
+    #
+    #     y = engine.runBurn(dt=dt, alt_m=0)
+    #     print(y)
+    #     T.append(y)
+    #     t.append(time_val)
+    #     alt.append(x**2)
+    #
+    #     time_val += dt
+    alts = 0
+    while time_val < 20: # engine.combustion_chamber.active:
+        y = engine.runBurn(dt=dt, alt_m=time_val **3)
+        # print(y)
         T.append(y)
         t.append(time_val)
-        alt.append(x**2)
-
         time_val += dt
+
+
+    print(f"Engine shutdown at {time_val:.2f} seconds")
 
     logs = [engine.combustion_chamber.ullage_tank.log_V,        # 0
             engine.combustion_chamber.ullage_tank.log_T,        # 1
@@ -471,32 +453,32 @@ if __name__ == "__main__":
     # for i,j in zip(t, T):
     #     print(f"t: {i}, T: {j}")
 
-    plt.subplot(3,2,1)
+    # plt.subplot(3,2,1)
     # plt.plot(logs[0], label="Ullage Volume")
-    # plt.plot(logs[4], label="Liquid Volume")
-    plt.plot(logs[8], label="Gas Volume")
-    plt.legend()
-
-    plt.subplot(3,2,2)
+    # # plt.plot(logs[4], label="Liquid Volume")
+    # plt.plot(logs[8], label="Gas Volume")
+    # plt.legend()
+    #
+    # plt.subplot(3,2,2)
     # plt.plot(logs[1], label="Ullage Temp")
-    # plt.plot(logs[5], label="Liquid Temp")
-    plt.plot(logs[9], label="Gas Temp")
-    plt.legend()
-
-    plt.subplot(3,2,3)
+    # # plt.plot(logs[5], label="Liquid Temp")
+    # plt.plot(logs[9], label="Gas Temp")
+    # plt.legend()
+    #
+    # plt.subplot(3,2,3)
     # plt.plot(logs[2], label="Ullage Pressure")
-    # plt.plot(logs[6], label="Liquid Pressure")
-    plt.plot(logs[10], label="Gas Pressure")
-    plt.legend()
-
-    plt.subplot(3,2,4)
+    # # plt.plot(logs[6], label="Liquid Pressure")
+    # plt.plot(logs[10], label="Gas Pressure")
+    # plt.legend()
+    #
+    # plt.subplot(3,2,4)
     # plt.plot(logs[3], label="Ullage Mass")
-    # plt.plot(logs[7], label="Liquid Mass")
-    plt.plot(logs[11], label="Gas Mass")
-    plt.legend()
-
-
-    plt.subplot(3,2,5)
+    # # plt.plot(logs[7], label="Liquid Mass")
+    # plt.plot(logs[11], label="Gas Mass")
+    # plt.legend()
+    #
+    #
+    # plt.subplot(3,2,5)
     plt.plot(t, T, label="Thrust ")
     plt.legend()
 

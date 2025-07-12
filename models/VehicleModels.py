@@ -7,10 +7,10 @@ from models.Engine.LiquidModels import *
 
 def rk4_step(rocket, state, dt):
 
-    k1 = rocket.getDynamics(state, dt)
-    k2 = rocket.getDynamics(state + 0.5 * dt * k1, dt)
-    k3 = rocket.getDynamics(state + 0.5 * dt * k2, dt)
-    k4 = rocket.getDynamics(state + dt * k3, dt)
+    k1 = rocket.getDynamics(state, dt, side_effect=False)
+    k2 = rocket.getDynamics(state + 0.5 * dt * k1, dt, side_effect=False)
+    k3 = rocket.getDynamics(state + 0.5 * dt * k2, dt, side_effect=False)
+    k4 = rocket.getDynamics(state + dt * k3, dt, side_effect=True)
 
     next_state = state + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
 
@@ -85,10 +85,15 @@ class Rocket:
 
         ])
 
-    def getDynamics(self, state, dt: float):
+        self.drags = []
 
-        a, b, c, d, _, __, static_pres = self.getTotalForce(state=state, dt=dt)
-        force = a + c + b # + d
+        self._initialize_vehicle()
+
+    def getDynamics(self, state, dt: float, side_effect: bool = True):
+
+        a, b, c, d, _, __, static_pres = self.getTotalForce(state=state, dt=dt, side_effect=side_effect)
+        force = a + b + c + d
+        # print(f"Drag: {np.linalg.norm(b):.3f}")
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state=state)
         # Sum of all accelerations --- a = F/m
         acceleration = force / mass
@@ -103,9 +108,6 @@ class Rocket:
         domega = np.zeros(3)
 
         # -- Mass Change -- #
-        # fluid_mass = self.engine.getFluidMass()
-        # dmdt = self.structure.liquidMass - fluid_mass
-        # self.structure.liquidMass = fluid_mass
         dmdt = -self.structure.getMassChange()
 
         # -- State Derivative -- #
@@ -123,7 +125,7 @@ class Rocket:
 
         return dstate
 
-    def getTotalForce(self, state, dt: float):
+    def getTotalForce(self, state, dt: float, side_effect: bool = True):
         # -- Constants -- #
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state)
         alt_m = pos[2]
@@ -145,7 +147,9 @@ class Rocket:
 
         # -- Forces -- #
         # Thrust
-        thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m)
+        thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
+        # print(thrust_mag)
+        # print(thrust_mag)
         # Thrust_force_body needs to be rotated depending on the TVC angle
         thrust_force_body = np.array([0.0, 0.0, thrust_mag])
         thrust_force_global = R.from_quat(quat).apply(thrust_force_body)
@@ -169,8 +173,13 @@ class Rocket:
         # print(drag_force)
         return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass), rho, q, stat_pres
 
-
-
+    def _initialize_vehicle(self):
+        """A function to immediately display vehicle information on launch"""
+        print("=" * 60)
+        print("INITIALIZING VEHICLE")
+        print(f"Initial Vehicle Mass:   {self.structure.wetMass} [kg]")
+        print(f"Initial Fluid Mass:     {self.structure.liquidMass} [kg]")
+        print("=" * 60)
 
 
 class RocketStructure:
@@ -198,19 +207,20 @@ class RocketStructure:
 
     def getMassChange(self):
         """
-        Gives mass change as a function of dry mass and remaining fluid mass
-        :return current mass:
+        Gives mass change as a function of dry mass and remaining fluid mass.
+        :return: mass change
         """
         if self.engine.combustion_chamber.active:
-            #print(self.engine.getFluidMass())
+            # Get mass after engine update
             val = self.dryMass + self.engine.getFluidMass()
+            # Subtract current mass from new mass
             dm = self.current_mass - val
+            # Set new mass as current mass
             self.current_mass = val
-            #print(dm)
-            # print(self.current_mass)
             return dm
         else:
-            return self.dryMass
+            # No method to change mass, dm = 0
+            return 0
 
     def getCurrentCM(self):
         """
@@ -316,7 +326,8 @@ class RocketAerodynamics:
         # Direction opposite to motion
         drag_direction = -v_air / v_mag  # explicitly say "opposite"
         mach = self.air.getMachNumber(pos[2], v_mag)
-        cd = self.getDragCoeff(pos[2], mach, aoa, beta)
+        # cd = self.getDragCoeff(pos[2], mach, aoa, beta)
+        cd = 0.25
         drag_magnitude = 0.5 * rho * v_mag ** 2 * cd * cross_area
 
         drag = drag_magnitude * drag_direction

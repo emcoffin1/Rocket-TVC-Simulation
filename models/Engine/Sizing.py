@@ -1,5 +1,5 @@
 from rocketcea.cea_obj import CEA_Obj
-from math import sqrt
+from math import sqrt, exp
 from scipy.optimize import brentq
 
 """
@@ -167,6 +167,27 @@ def getMassFlow_Thrust(desired_thrust: float, exit_pressure: float, exit_area: f
     return mdot
 
 
+def getMinimumDeltaVelocity(altitude: float):
+    term1 = sqrt(2 * 9.8 * altitude)
+    print("=" * 60)
+    print("GET MINIMUM DELTA VELOCITY")
+    print(f"Altitude:                       {altitude:.4f} [m]")
+    print(f"Delta v:                        {term1:.4f} [m/s]")
+    print("=" * 60)
+    return term1
+
+def getMassFraction_dv(delta_v: float, exhaust_velocity: float):
+    frac = exp(delta_v / exhaust_velocity)
+    print("=" * 60)
+    print("GET MASS FRACTION FROM dv")
+    print(f"Delta v:                        {delta_v:.4f} [m/s]")
+    print(f"Exhaust Velocity:               {exhaust_velocity:.4f} [m/s]")
+    print(f"Mass Fraction:                  {frac:.4f} [w0 / wf]")
+    print("=" * 60)
+    return frac
+
+
+
 chamber_pressure = 551853
 eps = 1.927
 of = 1.8
@@ -182,7 +203,8 @@ exit_velocity = getExitVelocity(gamma=gamma, exit_mach=Me, spec_gas_const=r, exi
 
 # No return
 getMassFlow_Thrust(desired_thrust=8000, exit_pressure=exit_press, exit_area=Ae, exit_velocity=exit_velocity)
-
+dv = getMinimumDeltaVelocity(altitude=100000)
+getMassFraction_dv(delta_v=dv, exhaust_velocity=exit_velocity)
 
 
 
