@@ -4,25 +4,28 @@ import EnvironmentalModels
 import matplotlib.pyplot as plt
 
 
-def print_results(time, pos, vel, thrust, drag, q, rocket):
+def print_results(time, pos, vel, q, rocket):
 
     print("=" * 60)
     print("FLIGHT ENDED")
 
     # Burntime
+    max_th_i = np.argmax(rocket.thrust)
     print(f"Burn Time:      {rocket.burntime}s")
-    print(f"Average Thrust: {round(np.average(rocket.thrust), 4)}N")
+    print(f"Average Thrust: {np.average(rocket.thrust):.2f}N")
+    print(f"Max Thrust:     {np.max(rocket.thrust):.2f}N at Time: {time[max_th_i]:.2f}s")
+
 
     # Altitude
     max_alt_i = np.argmax(pos[:, 2])  # correct array passed in
     max_alt = pos[max_alt_i, 2]
-    print(f"Max Altitude:   {max_alt:.3f} m at Time: {time[max_alt_i]:.3f}s")
+    print(f"Max Altitude:   {max_alt:.2f} m at Time: {time[max_alt_i]:.2f}s")
 
     # Velocity
     vel_norm = np.linalg.norm(vel, axis=1)
     max_vel = np.max(vel_norm)
     max_vel_time_i = np.argmax(vel_norm)
-    print(f"Max Velocity:   {max_vel:.3f} m/s at Time: {time[max_vel_time_i]:.3f}s")
+    print(f"Max Velocity:   {max_vel:.2f} m/s at Time: {time[max_vel_time_i]:.2f}s")
 
     # Determine max pressure
     max_q = 0
@@ -96,11 +99,13 @@ if __name__ == "__main__":
     density_log = np.array(density_log)
     dynamicpress_log = np.array(dynamicpress_log)
 
-    print_results(time=time_log, pos=pos_log, vel=vel_log, thrust=thrust_log, drag=drag_log, q=dynamicpress_log, rocket=rocket)
+    print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
 
     print("--- EXTRA LOG ---")
-    # for i,t in zip(mass_log, time_log):
-    #     print(t, round(i,2))
+    # for i,t in zip(rocket.thrust, time_log):
+    #     print(t, i)
+    #
+    # print(f"max th: {np.max(rocket.thrust)}")
 
     plt.figure()
     plt.subplot(2, 2, 1)
@@ -119,10 +124,10 @@ if __name__ == "__main__":
     plt.xlabel("Velocity (m/s)")
     plt.grid(True)
 
-    plt.subplot(2, 2, 4)
-    plt.plot(time_log, mass_log)
-    plt.xlabel("Mass Change")
-    plt.grid(True)
+    # plt.subplot(2, 2, 4)
+    # plt.plot(time_log, mass_log)
+    # plt.xlabel("Mass Change")
+    # plt.grid(True)
 
     plt.tight_layout()
     plt.show()

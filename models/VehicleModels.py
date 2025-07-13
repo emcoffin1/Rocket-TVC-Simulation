@@ -150,7 +150,6 @@ class Rocket:
         # Thrust
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
         if thrust_mag == 0 and not self.burntime:
-            print("ajsdf;aj time")
             self.burntime = time
         if side_effect and thrust_mag != 0:
             self.thrust.append(thrust_mag)
