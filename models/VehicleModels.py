@@ -85,7 +85,8 @@ class Rocket:
 
         ])
 
-        self.drags = []
+        self.thrust = []
+        self.burntime = None
 
         self._initialize_vehicle()
 
@@ -148,6 +149,11 @@ class Rocket:
         # -- Forces -- #
         # Thrust
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
+        if thrust_mag == 0 and not self.burntime:
+            print("ajsdf;aj time")
+            self.burntime = time
+        if side_effect and thrust_mag != 0:
+            self.thrust.append(thrust_mag)
         # print(thrust_mag)
         # print(thrust_mag)
         # Thrust_force_body needs to be rotated depending on the TVC angle
@@ -229,7 +235,7 @@ class RocketStructure:
         :return:
         """
         if self.engine.combustion_chamber.active:
-            val = (self.cgInitial + ((self.getCurrentMass() - self.wetMass) / (self.dryMass - self.wetMass)) *
+            val = (self.cgInitial + ((self.current_mass - self.wetMass) / (self.dryMass - self.wetMass)) *
                     (self.cgFinal - self.cgInitial))
             # print(val)
             return  val
@@ -241,7 +247,7 @@ class RocketStructure:
         :return:
         """
         if self.engine.combustion_chamber.active:
-            return (self.momInertiaYPInitial + ((self.getCurrentMass() - self.wetMass) / (self.dryMass - self.wetMass))
+            return (self.momInertiaYPInitial + ((self.current_mass - self.wetMass) / (self.dryMass - self.wetMass))
                     * (self.momInertiaYPFinal - self.momInertiaYPInitial))
         return self.momInertiaYPFinal
 

@@ -4,10 +4,14 @@ import EnvironmentalModels
 import matplotlib.pyplot as plt
 
 
-def print_results(time, pos, vel, thrust, drag, q):
+def print_results(time, pos, vel, thrust, drag, q, rocket):
 
     print("=" * 60)
     print("FLIGHT ENDED")
+
+    # Burntime
+    print(f"Burn Time:      {rocket.burntime}s")
+    print(f"Average Thrust: {round(np.average(rocket.thrust), 4)}N")
 
     # Altitude
     max_alt_i = np.argmax(pos[:, 2])  # correct array passed in
@@ -92,7 +96,7 @@ if __name__ == "__main__":
     density_log = np.array(density_log)
     dynamicpress_log = np.array(dynamicpress_log)
 
-    print_results(time=time_log, pos=pos_log, vel=vel_log, thrust=thrust_log, drag=drag_log, q=dynamicpress_log)
+    print_results(time=time_log, pos=pos_log, vel=vel_log, thrust=thrust_log, drag=drag_log, q=dynamicpress_log, rocket=rocket)
 
     print("--- EXTRA LOG ---")
     # for i,t in zip(mass_log, time_log):

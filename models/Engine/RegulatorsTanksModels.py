@@ -9,6 +9,18 @@ class DomeReg:
         self.outletPressure = outlet_pressure
 
 
+class InjectorPlate:
+    def __init__(self, injector_holes: int = 1, injection_area: float = 0.01, mdot_fuel: float = 0.0, mdot_lox: float = 0.0):
+        self.injector_holes = injector_holes
+        self.injection_area = injection_area    # m2
+        self.mdot_fuel = mdot_fuel              # kg/s
+        self.mdot_lox = mdot_lox                # kg/s
+
+    @property
+    def injectMass(self, dt: float = 0.1):
+        return (self.mdot_lox + self.mdot_lox) * dt
+
+
 class PropTank:
     def __init__(self, volume: float, fluid: object, dome_reg: object, ullage: object, tank_volume: float = None):
         """
@@ -19,6 +31,7 @@ class PropTank:
         :param ullage: pressure feed system [object]
         """
         self.tank_volume = tank_volume if tank_volume is not None else round(volume+0.004, 2)
+
         # -- Fluid -- #
         self.volume = volume
         self.fluid = fluid
@@ -71,7 +84,7 @@ class PropTank:
         # print(f" Loaded: {self.fluid.name()} mass: {self.mass} kg")
         # print(f" Loaded: {self.fluid.name()} volume: {self.volume} m2")
 
-        self.heat_leak = 0.05 # W -- guestimate
+        self.heat_leak = 0.05  # W -- guestimate
 
         self._add_some_nitrogen()
 
@@ -85,6 +98,7 @@ class PropTank:
                               Determine if blow down or pressure regulated:
                               Blow down
                                 Recompute temperature and pressure based on dV
+                                    -- Happens passively
                               Pressure regulated
                                 Determine the mass required from the ullage tank to correct the pressure
                                 Automatically add that mass and recompute all values
@@ -100,14 +114,14 @@ class PropTank:
         :param dt: time step                        [s]
         :return:
         """
+
         # Account for fluid boil off which happens passively
         # Should only happen to LOX but just in case
-        # print(f"Pres difference at t=0: {self.reg_pressure - self.total_gas_pressure}")
         if self.temp > self.fluid.boiling_point:
-            # print(0)
             # Adds mass to fluid gas and removes mass from fluid
-            self.updateFluidBoilOff(dt=dt)
+            self._update_fluid_boil_off(dt=dt)
 
+        # -- Fluid loss due to combustion -- #
         # Clamp mass change
         dm = min(dm, self.mass)
 
@@ -118,44 +132,26 @@ class PropTank:
         self.volume -= dv
         self.mass -= dm
 
-        #
-        self.total_gas_volume = self.ull_volume + self.gas_fluid_volume
+        # Update total gas volume
+        self.total_gas_volume = self.tank_volume - self.volume
 
-        # Update the gas temperatures
-        self.updateGasExchangeHeat(dt)
-        # Update the partial pressure of gases
-        self.updatePartialPressures()
+        # Update temps and pressures before determining mass needed
+        self._update_partial_pressure()
+        self._update_gas_temperatures()
 
+        # -- Replenish Gas -- #
         # P,V,T,m have all updated, now pull ullage gas
-        if self.blow_down:
-            # System in blow-down
-            # Constant mass, changing volume, new temp and pressure
-
-            # Ullage gas
-            if (self.ull_mass and self.gas_fluid_mass) > 0:
-                # Update temperatures
-                # Using T1 = T0 * (V0 / V2) ** (gamma-1)
-                self.ull_temp = self.ull_temp * (self.total_gas_volume / (self.total_gas_volume + dv)) ** (self.ullage.gamma - 1)
-                self.gas_fluid_temp = self.gas_fluid_temp * (self.total_gas_volume / (self.total_gas_volume + dv)) ** (self.fluid.gamma_vapor - 1)
-
-                # Store all new gas variables
-                self.total_gas_volume += dv
-
-                # Update temperature values
-                self.updateGasExchangeHeat(dt)
-
-                # Update partial pressures
-                self.updatePartialPressures()
-
-        else:
-            # System is not in blow-down
-
-            self._pressure_feed_step(dm, dt)
+        if not self.blow_down:
+            # System not in blow-down
+            self._pressure_feed_step()
 
             # Check if blow down now
-            if self.ullage.P <= self.reg_pressure or self.ullage.m < 0:
+            if self.ullage.P <= self.reg_pressure:
                 print(f"[STATE CHANGE] Entering blow-down at: {time}s")
                 self.blow_down = True
+
+        else:
+            self.dm = 0
 
         # -- Logging -- #
         self.log_P_U.append(self.ull_pressure)      # | Ullage gas logging
@@ -174,15 +170,22 @@ class PropTank:
         self.log_V_total_gas.append(self.total_gas_volume)      # | Total gas logging
         self.log_P_total_gas.append(self.total_gas_pressure)    # |
 
-    def getInternalEnergy(self):
-        """Uses: sum_U = sum(m*cv*T) to get internal energy"""
-        # fluid_U = self.mass * self.fluid.vapor_coefficient * self.temp
-        ullage_u = self.ull_mass * self.ullage.vapor_coefficient * self.ull_temp
-        fluid_gas_u = self.gas_fluid_mass * self.fluid.vapor_coefficient * self.gas_fluid_temp
-        return ullage_u + fluid_gas_u  # + fluid_U
+    def _update_gas_temperatures(self):
+        """
+        Updates temperature of gasses
+        T = PV / mR
+        """
+        if self.ull_mass != 0:
+            self.ull_temp = self.ull_pressure * self.total_gas_volume / (self.ullage.R * self.ull_mass)
 
-    def updateFluidBoilOff(self, dt: float):
-        """ Uses dm = Q * dt / h to determine boil off mass and volume since last time step"""
+        if self.gas_fluid_mass != 0:
+            self.gas_fluid_temp = self.gas_fluid_pres * self.total_gas_volume / (self.fluid.R_vapor * self.gas_fluid_mass)
+
+    def _update_fluid_boil_off(self, dt: float):
+        """
+        Uses dm = Q * dt / h to determine boil off mass and volume since last time step
+        Only accounts for enclosure induced boil off, not boil off from hotter N gas
+        """
         # Compute boiled off mass
         dm_bo = self.heat_leak * dt / self.fluid.vapor_energy
 
@@ -200,7 +203,7 @@ class PropTank:
         self.volume -= dv_bo
         self.gas_fluid_volume += dv_bo
 
-    def _pressure_feed_step(self, dm, dt):
+    def _pressure_feed_step(self):
         """
         Determines the mass of ullage required to return to set point
         Update partial pressures before
@@ -210,7 +213,6 @@ class PropTank:
 
         if dP > 0:
             # Pressure below set point, fill tanks
-
             # Prevent divide-by-zero
             denom = self.ullage.R * self.ull_temp
             if denom <= 0:
@@ -220,57 +222,22 @@ class PropTank:
             new_m = dP * self.total_gas_volume / denom
 
             # Add mass to ullage mass
-            self.dm = dm
+            self.dm = new_m
             self.ull_mass = self.ull_mass + new_m
-
-            # Recompute temperature interactions
-            self.updateGasExchangeHeat(dt)
-
-            # Re-updated partial Pressures
-            self.updatePartialPressures()
 
         else:
             self.dm = 0
 
-
-    def updateGasExchangeHeat(self, dt: float):
-        """
-        Qdot = hA ( T_hot - T_cold )
-        hA = effective heat transfer coefficient
-
-        dT = Qdot dt / m cv
-        """
-        # Check to see if there is mas of both gasses
-        if self.ull_mass == 0 or self.gas_fluid_mass == 0:
-            return # No heat exchange if one mass is empty
-
-        # Effective heat transfer constant
-        hA = self.fluid.heat_exchange_coefficient
-
-        Qdot = (self.ull_temp - self.gas_fluid_temp) * hA
-        Q = Qdot * dt
-
-        # Direction of heat flow (hot to cold)
-        if Q > 0:
-            # Nitrogen is hotter - subtract from N, add to fluid
-            self.ull_temp -= Q / (self.ull_mass * self.ullage.vapor_coefficient)
-            self.gas_fluid_temp += Q / (self.gas_fluid_mass * self.fluid.vapor_coefficient)
-        else:
-            # Oxygen is hotter - Add to N, subtract from fluid
-            self.ull_temp += Q / (self.ull_mass * self.ullage.vapor_coefficient)
-            self.gas_fluid_temp -= Q / (self.gas_fluid_mass * self.fluid.vapor_coefficient)
-
-    def updatePartialPressures(self):
+    def _update_partial_pressure(self):
         """
         Uses ideal gas law to update the partial pressures and then the total pressure
         P = mRT / V
         """
         P_ullage = self.ull_mass * self.ullage.R * self.ull_temp / self.total_gas_volume
-        P_fluid_gas = self.gas_fluid_mass * self.fluid.R_vapor * self.gas_fluid_temp / self.total_gas_volume
+        # P_fluid_gas = self.gas_fluid_mass * self.fluid.R_vapor * self.gas_fluid_temp / self.total_gas_volume
         self.ull_pressure = P_ullage
-        self.gas_fluid_pres = P_fluid_gas
-        self.total_gas_pressure = P_ullage + P_fluid_gas
-
+        # self.gas_fluid_pres = P_fluid_gas
+        self.total_gas_pressure = P_ullage #+ P_fluid_gas
 
     def _add_some_nitrogen(self):
         """Preloads tanks with boil off pressure or ullage pressure"""
@@ -279,11 +246,9 @@ class PropTank:
 
         # Place nitrogen with ullage temp
         self.ull_temp = self.ullage.T
-        self.gas_fluid_temp = self.fluid.boiling_point
+        # self.gas_fluid_temp = self.fluid.boiling_point
 
         if self.temp > self.fluid.boiling_point:
-            # print(f"Adding BOIL OFF and ULLAGE to {self.fluid.name()}")
-
             # -- BOIL OFF -- #
             # Give a small amount of boil off if temp is above
             m_bo = 0.000001 * self.mass
@@ -293,7 +258,6 @@ class PropTank:
 
             # Determine volume of that lost mass
             v_lost_fluid = m_bo / self.fluid.density_liquid
-            # print(f"Boil off volume: {v_fluid_gas}")
 
             # Adjust fluid and fluid gas volumes
             self.volume = self.volume - v_lost_fluid        # Update the fluid volume level
@@ -305,18 +269,14 @@ class PropTank:
             self.total_gas_pressure = p_bo                  # Updates the total pressure of the gasses
             self.gas_fluid_pres = p_bo                      # Updates the PP of the liquid gas
 
-            # print(f"{self.fluid.name()}  BO ---  V: {self.total_gas_volume}, P: {self.gas_fluid_pres}, T: {self.gas_fluid_temp}")
-
             # -- ULLAGE GAS -- #
             # Pressure required
             # Clamped so can't be over pressured
             p_reg = max(0, self.reg_pressure - self.total_gas_pressure)
+            self.total_gas_volume = self.tank_volume - self.volume
 
             # Get m needed from ullage tank using m = PV/RT
             self.ull_mass = p_reg * self.total_gas_volume / (self.ullage.R * self.ull_temp)
-
-            # Remove mass from ullage tank
-            self.ullage.gasLeaving(dm=self.ull_mass, dt=0.001)
 
             # Final pressure using ideal
             p_ull = self.ull_mass * self.ullage.R * self.ull_temp / self.total_gas_volume
@@ -324,38 +284,19 @@ class PropTank:
             self.total_gas_pressure += p_ull
             self.ull_pressure = p_ull
 
-            # print(f"{self.fluid.name()}  BO ---  V: {self.total_gas_volume}, P: {self.total_gas_pressure}")
-
         else:
-            # print(f"Adding ULLAGE to {self.fluid.name()}")
             # -- ULLAGE GAS -- #
             self.total_gas_volume = self.tank_volume - self.volume
-
             # Pressure required
             # Clamped so can't be over pressured
             p_reg = self.reg_pressure
             # Find m required to fill tank at required pressure using m = PV/RT
             self.ull_mass = p_reg * self.total_gas_volume / (self.ullage.R * self.ull_temp)
 
-            # Remove mass from ullage tank
-            self.ullage.gasLeaving(dm=self.ull_mass, dt=0.001)
-
             # Final pressure using ideal
             p_ull = self.ull_mass * self.ullage.R * self.ull_temp / self.total_gas_volume
             self.total_gas_pressure += p_ull
             self.ull_pressure = p_ull
 
-            # print(f"{self.fluid.name()}  BO ---  V: {self.total_gas_volume}, P: {self.total_gas_pressure}")
-
-
-class InjectorPlate:
-    def __init__(self, injector_holes: int = 1, injection_area: float = 0.01, mdot_fuel: float = 0.0, mdot_lox: float = 0.0):
-        self.injector_holes = injector_holes
-        self.injection_area = injection_area    # m2
-        self.mdot_fuel = mdot_fuel              # kg/s
-        self.mdot_lox = mdot_lox                # kg/s
-
-    @property
-    def injectMass(self, dt: float = 0.1):
-        return (self.mdot_lox + self.mdot_lox) * dt
-
+        # Remove mass from ullage tank
+        self.ullage.gasLeaving(dm=self.ull_mass, dt=0.0001)

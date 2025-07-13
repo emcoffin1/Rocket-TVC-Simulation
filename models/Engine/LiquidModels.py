@@ -148,7 +148,7 @@ class UllageGas:
     Models gas behavior of the pressurant during blow-down
     Can be isothermal or adiabatic
     """
-    def __init__(self, m0: float = 2e6, V0: float = 0.01, T0: float = 285, R: float = 296.8, mdot: float = 4.2134195):
+    def __init__(self, m0: float = 2e6, V0: float = 0.01, T0: float = 285, R: float = 296.8):
         """
 
         :param P0: Initial gas pressure             [Pa]
@@ -165,11 +165,10 @@ class UllageGas:
         self.m_total = self.m
         self.m_used = 0
         self.gamma = 1.4    # Specific heat
-        self.mdot = -mdot
         self.vapor_coefficient  = 743
 
         # print(f" Loaded: ULLAGE mass:       {self.m}")
-        # print(f" Loaded: ULLAGE pressure:   {self.P}")
+        print(f" Loaded: ULLAGE pressure:   {self.P}")
 
         self.log_P = []
         self.log_V = []
@@ -184,22 +183,6 @@ class UllageGas:
         :param dt: time step [s]
         :return:
         """
-
-        # dm_dt_const = dm/dt
-        # print(f"Gas Leaving ---- {dm}")
-        #
-        # # Compute change in temperature
-        # # dT/dt = -mdot * T/m * gamma+1
-        # dT_dt = -dm_dt_const * self.T / self.m * (self.gamma + 1)
-        # self.T += dT_dt * dt
-        #
-        # # Compute change in pressure
-        # # dP/dt = -mdot * RT/V * gamma
-        # dP_dt = -dm_dt_const * (self.R * self.T / self.V) * self.gamma
-        # self.P += dP_dt * dt
-        #
-        # self.m -= dm
-        # self.m_used += dm
 
         # Clamp dm to avoid unphysical mass removal
         dm = min(dm, self.m)
@@ -236,6 +219,7 @@ class UllageGas:
         self.log_P.append(self.P)
         self.log_T.append(self.T)
         self.log_V.append(self.V)
+        # print(self.P)
 
         # print(f"ULLAGE - P: {self.P}  -  T: {self.T}  -  Mass: {self.m}  -  Mass used: {self.m_used}")
 
