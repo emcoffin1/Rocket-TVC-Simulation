@@ -107,6 +107,7 @@ class CombustionChamber:
         self.g = 9.08665       # m/s2
         self.At = At
         self.mach = None
+        self.separation = False
 
         self._update_gas_properties()
 
@@ -168,8 +169,15 @@ class CombustionChamber:
         is held in the tanks
         """
         # print(feed_pressure)
+
         f, l = self.getMassFlowRate(feed_pressure)
         self.Pc = (f+l) * self.c_star / self.At
+
+        if self.separation:
+            freq = 50
+            amp = 0.05
+            self.Pc *= 1.0 + amp * np.sin(2 * np.pi * freq * self.time)
+            print(f"Separation PC: {self.Pc}")
 
     def getThrust(self) -> float:
         """
@@ -400,14 +408,16 @@ class Nozzle:
             thrust_total = thrust + ((pres_exit - pres_atm) * self.Ae)
 
             if pres_atm > p_back:
-                # Seperation occurs
-                print("Separation")
+                self.combustionChamber.separation = True
+                # Separation occurs
                 severity = (pres_atm - p_back) / p_back
 
                 # Loss factor between 0.5 and 1
                 loss_factor = max(0.5, 1.0 - 0.5 * severity)
 
                 thrust_total += loss_factor
+            else:
+                self.combustionChamber.separation = False
 
             return thrust_total
         else:
