@@ -106,6 +106,7 @@ class CombustionChamber:
         self.eps = eps
         self.g = 9.08665       # m/s2
         self.At = At
+        self.mach = None
 
         self._update_gas_properties()
 
@@ -181,7 +182,7 @@ class CombustionChamber:
         F = mdot * self.Ve
         return F
 
-    def burnStep(self, dt: float, side_effect: bool = True) -> float:
+    def burnStep(self, dt: float, side_effect: bool = True):
         """
         An iteration of time step, changes the mass in each tank, returns the RAW thrust,
         will return no thrust if tanks are empty
@@ -271,6 +272,7 @@ class CombustionChamber:
 
         # Only supersonic exit flows are valid (e.g., M_e > 1)
         val = scipy.optimize.brentq(func, 1.01, 10.0)
+        self.mach = val
         return val
 
     def _get_rawthrust_over_time(self, time_max=10, dt=1.0):
@@ -393,11 +395,40 @@ class Nozzle:
         if thrust != 0:
             pres_atm = self.air.getStaticPressure(alt_m=alt_m)
             pres_exit = self.combustionChamber.Pe
+            p_back = self.getCriticalBackPressure()
+
             thrust_total = thrust + ((pres_exit - pres_atm) * self.Ae)
+
+            if pres_atm > p_back:
+                # Seperation occurs
+                print("Separation")
+                severity = (pres_atm - p_back) / p_back
+
+                # Loss factor between 0.5 and 1
+                loss_factor = max(0.5, 1.0 - 0.5 * severity)
+
+                thrust_total += loss_factor
+
             return thrust_total
         else:
             return 0
 
+
+    def getCriticalBackPressure(self):
+        gam = self.combustionChamber.gamma
+        mach = self.combustionChamber.mach
+        pc = self.combustionChamber.Pc
+
+        exp = gam / (gam - 1)
+
+        term1 = (1 + ((gam - 1) / 2) * mach ** 2) ** -exp
+
+        term2_base = ((gam + 1) ** 2 * mach ** 2) / (4 * gam * mach ** 2 - 2 * (gam - 1))
+        term2 = term2_base ** exp
+
+        Pb_crit = pc * term1 * term2
+        # print(f"[Flow Separation] Pb_crit = {Pb_crit:.2f} Pa")
+        return Pb_crit
 
 
 
