@@ -1,9 +1,7 @@
-import numpy as np
+
 from scipy.spatial.transform import Rotation as R
-import math
 import EnvironmentalModels
 from models.Engine.EngineModels import *
-from models.Engine.LiquidModels import *
 
 def rk4_step(rocket, state, dt):
 
@@ -134,12 +132,12 @@ class Rocket:
         # -- Constants -- #
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state)
         alt_m = pos[2]
-        rho = self.air.getDensity(alt_m=alt_m)
+        rho = self.air.getDensity()
         # print(rho)
-        stat_pres = self.air.getStaticPressure(alt_m=alt_m)
+        stat_pres = self.air.getStaticPressure()
 
         if side_effect:
-            m = round(self.air.getMachNumber(velocity_mps=np.linalg.norm(vel), alt_m=alt_m), 2)
+            m = round(self.air.getMachNumber(velocity_mps=np.linalg.norm(vel)), 2)
             self.mach.append(m)
 
         # -- Velocity -- #

@@ -400,8 +400,9 @@ class Nozzle:
         :param alt_m: Current altitude [m]
         :return:
         """
+        self.air.getCurrentAtmosphere(altitudes_m=alt_m)
         if thrust != 0:
-            pres_atm = self.air.getStaticPressure(alt_m=alt_m)
+            pres_atm = self.air.getStaticPressure()
             pres_exit = self.combustionChamber.Pe
             p_back = self.getCriticalBackPressure()
 

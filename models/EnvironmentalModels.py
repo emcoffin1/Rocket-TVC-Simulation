@@ -77,140 +77,83 @@ class AirProfile:
         """
         Called every time step to update atmospheric conditions
         Time may not be updated if the step is a repeat for rk4 integration
+        https://swxtrec.github.io/pymsis/examples/plot_altitude_profiles.html#sphx-glr-examples-plot-altitude-profiles-py
         """
         self._update_current_time(time)
-        print(self.date_time)
-        output = msis.run([self.date_time], [lat], [lon], [altitudes_m], [self.f107], [self.f107a], [self.aps])
-        data = output.data
-        self.rho = float(data[0, 0])
-        self.temp = float(data[0, 10])
-        self.pres = self.rho * self.R * self.temp
+        alt_km = altitudes_m / 1000
+        output = msis.run([self.date_time], [lat], [lon], [alt_km], [self.f107], [self.f107a], [self.aps])
+        data = np.squeeze(output)
 
-        print(f"RHO: {self.rho}   TEMP: {self.temp}    PRES: {self.pres}")
+        self.rho = round(float(data[0]), 4)
+        self.temp = round(float(data[10]), 4)
+        self.pres = round((self.rho * self.R * self.temp),4)
+
+        # print(f"RHO: {self.rho}   TEMP: {self.temp}    PRES: {self.pres}")
 
 
     def _update_current_time(self, time):
         """Updates current time domain for accurate models"""
         self.date_time = [self.start_time + datetime.timedelta(seconds=time)]
 
-    def getDensity(self, alt_m: float):
+    def getDensity(self):
         """
-        :param alt_m:
         :return density (kg/m3):
         """
-        # temp_ratio = 1 - (self.L * alt_m / self.T0)
-        # #print(temp_ratio)
-        # if temp_ratio <= 0:
-        #     return 0.0
-        # rho = self.densityAir * temp_ratio ** ((self.g / (self.R * self.L)) + 1)
-        # return rho
         return self.rho
 
-
-
-
-    def getStaticPressure(self, alt_m:float):
+    def getStaticPressure(self):
         """Returns static pressure from NRLMSISE00"""
-        # t = self.getTemperature(alt_m)
-        #
-        # if alt_m <= 11000:
-        #     p = 101.29 * (t / 288.08)**5.256
-        #
-        # elif alt_m <= 25000:
-        #     p = 22.65 * math.exp(1.73 - 0.000157*alt_m)
-        #
-        # elif alt_m > 25000:
-        #     p = 2.488 * (t / 216.6)**-11.388
-        #
-        # return p
         return self.pres
 
 
-    def getDynamicPressure(self, alt_m: float, velocity_mps: float):
+    def getDynamicPressure(self, velocity_mps: float):
         """
         Uses 1/2 rho v^2 to return dynamic pressure
-        :param alt_m:
         :param velocity_mps:
         :return:
         """
         velocity_mps = np.linalg.norm(velocity_mps)
-        rho = self.getDensity(alt_m)
+        rho = self.getDensity()
         return 0.5 * rho * velocity_mps ** 2
 
-    def getTemperature(self, alt_m: float):
+    def getTemperature(self):
         """
-        Returns temperature in K (converted from C)
+        Returns temperature in K from NRLMSISE00
         """
-        # alt_km = alt_m / 1000.0
-        # t = None
-        # if alt_km <= 11:
-        #     # t = 2.3 - (0.154 * alt_km)
-        #     t = 14.935 - (alt_km / 0.154)
-        #
-        # elif alt_km <= 20:
-        #     t = -56.46
-        #
-        # elif alt_km <= 50:
-        #     t = -90.0765 + (alt_km / 0.583)
-        #
-        # elif alt_km <= 56:
-        #     t = -5
-        #
-        # elif alt_km <= 80:
-        #     t = 204.968 - (alt_km / 0.2667)
-        #
-        # elif alt_km <= 90:
-        #     t = -95
-        #
-        # elif alt_km <= 150:
-        #     t = -545 + (alt_km / 0.2)
-        #
-        # elif alt_km <= 500:
-        #     # Logarithmic rise from 150 km to ~500 km
-        #     # Adjusted base temp (continuity) and scale for realism
-        #     t = 500.0 + 250.0 * math.log10((alt_km - 149) + 1)  # Smooth rise
-        #
-        # else:
-        #     # Clamp temp above 500 km (exosphere approximation)
-        #     t = 1200.0
-        #
-        # k = t + 273.15
-        #
-        # return k
         return self.temp
 
-    def getSpeedOfSound(self, alt_m: float):
-        T = self.getTemperature(alt_m)
+    def getSpeedOfSound(self):
+        T = self.getTemperature()
         print(T)
         a = math.sqrt(self.gamma * self.R * T)
 
         return a
 
-    def getMachNumber(self, alt_m: float, velocity_mps: float):
+    def getMachNumber(self, velocity_mps: float):
 
-        a = self.getSpeedOfSound(alt_m)
+        a = self.getSpeedOfSound()
         if a > 0:
             return velocity_mps / a
         return 0.0
 
-    def getDynamicViscosity(self, alt_m: float):
-        T = self.getTemperature(alt_m)
+    def getDynamicViscosity(self):
+        T = self.getTemperature()
         mu0 = 1.716e-5
         return mu0 * ((T / self.T0) ** 1.5) * (self.T0 + self.S) / (T + self.S)
 
     def getKinematicViscosity(self, alt_m: float):
-        mu = self.getDynamicViscosity(alt_m)
-        rho = self.getDensity(alt_m)
+        mu = self.getDynamicViscosity()
+        rho = self.getDensity()
         return mu / rho if rho > 0 else 0
 
-    def getReynoldsNumber(self, alt_m: float, velocity_mps: float, characteristic_length: float):
-        rho = self.getDensity(alt_m)
-        mu = self.getDynamicViscosity(alt_m)
+    def getReynoldsNumber(self, velocity_mps: float, characteristic_length: float):
+        rho = self.getDensity()
+        mu = self.getDynamicViscosity()
         return (rho * velocity_mps * characteristic_length) / mu if mu > 0 else 0
 
     def getStagnationPressure(self, alt_m: float, velocity_mps: float):
-        P = self.getStaticPressure(alt_m)
-        M = self.getMachNumber(alt_m, velocity_mps)
+        P = self.getStaticPressure()
+        M = self.getMachNumber(velocity_mps=velocity_mps)
         if M < 1e-3:
             return P
         return P * (1 + ((self.gamma - 1) / 2) * M ** 2) ** (self.gamma / (self.gamma - 1))
