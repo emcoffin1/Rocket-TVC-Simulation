@@ -85,9 +85,13 @@ class Rocket:
 
         ])
 
-        self.thrust = []
-        self.burntime = None
+        # Logging
+        self.thrust = []                         # Thrust curve
+        self.burntime = None                     # Time burn stops
+        self.mach = []
+        self.alt = []
 
+        # Init print function
         self._initialize_vehicle()
 
     def getDynamics(self, state, dt: float, side_effect: bool = True):
@@ -96,6 +100,9 @@ class Rocket:
         force = a + b + c + d
         # print(f"Drag: {np.linalg.norm(b):.3f}")
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state=state)
+
+        self.mach.append(self.air.getMachNumber(velocity_mps=vel, alt_m=pos[2]))
+        self.alt.append(pos[2])
         # Sum of all accelerations --- a = F/m
         acceleration = force / mass
 
@@ -179,7 +186,7 @@ class Rocket:
         return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass), rho, q, stat_pres
 
     def _initialize_vehicle(self):
-        """A function to immediately display vehicle information on launch"""
+        """A function to immediately display vehicle information on launch/initialization"""
         print("=" * 60)
         print("INITIALIZING VEHICLE")
         print(f"Initial Vehicle Mass:   {self.structure.wetMass} [kg]")

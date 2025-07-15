@@ -4,6 +4,7 @@ import math
 class DomeReg:
     """
     Simulates the pressure regulation between the ullage and propellant tanks
+    Pressure drop is assumed to be zero due to comparatively high pressures
     """
     def __init__(self, outlet_pressure: float):
         self.outletPressure = outlet_pressure

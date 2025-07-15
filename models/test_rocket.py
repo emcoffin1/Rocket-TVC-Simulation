@@ -106,28 +106,28 @@ if __name__ == "__main__":
     #     print(t, i)
     #
     # print(f"max th: {np.max(rocket.thrust)}")
-
-    plt.figure()
-    plt.subplot(2, 2, 1)
-    plt.plot(time_log, thrust_log, label="Thrust")
-    # plt.plot(rocket.drags, label="Drag")
-    plt.xlabel("Forces (N)")
-    plt.grid(True)
-
-    plt.subplot(2, 2, 2)
-    plt.plot(time_log, pos_log*3)
-    plt.xlabel("Alt (m)")
-    plt.grid(True)
-
-    plt.subplot(2, 2, 3)
-    plt.plot(time_log, vel_log)
-    plt.xlabel("Velocity (m/s)")
-    plt.grid(True)
+    # plt.figure()
+    # plt.subplot(2, 2, 1)
+    # plt.plot(time_log, thrust_log, label="Thrust")
+    # # plt.plot(rocket.drags, label="Drag")
+    # plt.xlabel("Forces (N)")
+    # plt.grid(True)
+    #
+    # plt.subplot(2, 2, 2)
+    # plt.plot(time_log, pos_log*3)
+    # plt.xlabel("Alt (m)")
+    # plt.grid(True)
+    #
+    # plt.subplot(2, 2, 3)
+    # plt.plot(time_log, vel_log)
+    # plt.xlabel("Velocity (m/s)")
+    # plt.grid(True)
 
     # plt.subplot(2, 2, 4)
-    # plt.plot(time_log, mass_log)
+
+    plt.plot(rocket.alt, rocket.mach)
     # plt.xlabel("Mass Change")
-    # plt.grid(True)
+    plt.grid(True)
 
     plt.tight_layout()
     plt.show()

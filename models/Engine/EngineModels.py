@@ -408,14 +408,18 @@ class Nozzle:
             thrust_total = thrust + ((pres_exit - pres_atm) * self.Ae)
 
             if pres_atm > p_back:
+                # If back pressure is lower than atmos pressure
+                # Set flow separation to true
                 self.combustionChamber.separation = True
-                # Separation occurs
+
+                # Calculate severity of the separation as a percentage
                 severity = (pres_atm - p_back) / p_back
 
-                # Loss factor between 0.5 and 1
+                # Calculate Loss factor between 0.5 and 1
                 loss_factor = max(0.5, 1.0 - 0.5 * severity)
 
-                thrust_total += loss_factor
+                # Integrate the loss factor into the final returned thrust
+                thrust_total *= loss_factor
             else:
                 self.combustionChamber.separation = False
 
@@ -423,8 +427,10 @@ class Nozzle:
         else:
             return 0
 
-
     def getCriticalBackPressure(self):
+        """
+        Checks critical back pressure to ensure no flow separation is present
+        """
         gam = self.combustionChamber.gamma
         mach = self.combustionChamber.mach
         pc = self.combustionChamber.Pc
