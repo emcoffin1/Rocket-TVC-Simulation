@@ -177,7 +177,7 @@ class CombustionChamber:
             freq = 50
             amp = 0.05
             self.Pc *= 1.0 + amp * np.sin(2 * np.pi * freq * self.time)
-            print(f"Separation PC: {self.Pc}")
+            # print(f"Separation PC: {self.Pc}")
 
     def getThrust(self) -> float:
         """

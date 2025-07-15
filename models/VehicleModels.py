@@ -89,7 +89,6 @@ class Rocket:
         self.thrust = []                         # Thrust curve
         self.burntime = None                     # Time burn stops
         self.mach = []
-        self.alt = []
 
         # Init print function
         self._initialize_vehicle()
@@ -101,8 +100,6 @@ class Rocket:
         # print(f"Drag: {np.linalg.norm(b):.3f}")
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state=state)
 
-        self.mach.append(self.air.getMachNumber(velocity_mps=vel, alt_m=pos[2]))
-        self.alt.append(pos[2])
         # Sum of all accelerations --- a = F/m
         acceleration = force / mass
 
@@ -140,6 +137,10 @@ class Rocket:
         rho = self.air.getDensity(alt_m=alt_m)
         # print(rho)
         stat_pres = self.air.getStaticPressure(alt_m=alt_m)
+
+        if side_effect:
+            m = round(self.air.getMachNumber(velocity_mps=np.linalg.norm(vel), alt_m=alt_m), 2)
+            self.mach.append(m)
 
         # -- Velocity -- #
         v_air = vel - self.wind.getWindVelocity(alt_m=pos[2])

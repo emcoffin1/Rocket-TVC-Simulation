@@ -84,10 +84,31 @@ class AirProfile:
         return 0.5 * rho * velocity_mps ** 2
 
     def getTemperature(self, alt_m: float):
-        if alt_m <= self.referenceALt:
+        if alt_m <= 11000:  # Troposphere
             return self.T0 - self.L * alt_m
-        return 0.0
 
+        elif alt_m <= 20000:  # Lower stratosphere (isothermal)
+            return 216.65
+
+        elif alt_m <= 32000:  # Mid-stratosphere (inversion)
+            return 216.65 + 0.001 * (alt_m - 20000)
+
+        elif alt_m <= 47000:
+            return 228.65 + 2.8 * (alt_m - 32000)
+
+        elif alt_m <= 51000:
+            return 270.65
+
+        elif alt_m <= 71000:
+            return 270.65 - 2.8 * (alt_m - 51000)
+
+        elif alt_m <= 85000:
+            return 214.65 - 2.0 * (alt_m - 71000)
+
+        elif alt_m <= 150000:
+            return 186.87 + 4.0 * (alt_m - 85000)
+        else:
+            return 450.0
 
     def getSpeedOfSound(self, alt_m: float):
         T = self.getTemperature(alt_m)
@@ -96,6 +117,7 @@ class AirProfile:
     def getMachNumber(self, alt_m: float, velocity_mps: float):
 
         a = self.getSpeedOfSound(alt_m)
+        print(a)
         if a > 0:
             return velocity_mps / a
         return 0.0

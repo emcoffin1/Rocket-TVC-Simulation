@@ -25,7 +25,11 @@ def print_results(time, pos, vel, q, rocket):
     vel_norm = np.linalg.norm(vel, axis=1)
     max_vel = np.max(vel_norm)
     max_vel_time_i = np.argmax(vel_norm)
+
+    max_mach = np.max(np.array(rocket.mach))
+    max_mach_i = np.argmax(np.argmax(np.array(rocket.mach)))
     print(f"Max Velocity:   {max_vel:.2f} m/s at Time: {time[max_vel_time_i]:.2f}s")
+    print(f"Max Mach:       {max_mach:.2f}    at Time: {time[max_mach_i]:.2f}s")
 
     # Determine max pressure
     max_q = 0
@@ -123,9 +127,9 @@ if __name__ == "__main__":
     # plt.xlabel("Velocity (m/s)")
     # plt.grid(True)
 
+    rocket.mach.append(rocket.mach[-1]+ 0.00000001)
     # plt.subplot(2, 2, 4)
-
-    plt.plot(rocket.alt, rocket.mach)
+    plt.plot(time_log, rocket.mach)
     # plt.xlabel("Mass Change")
     plt.grid(True)
 
