@@ -15,7 +15,6 @@ def print_results(time, pos, vel, q, rocket):
     print(f"Average Thrust: {np.average(rocket.thrust):.2f}N")
     print(f"Max Thrust:     {np.max(rocket.thrust):.2f}N at Time: {time[max_th_i]:.2f}s")
 
-
     # Altitude
     max_alt_i = np.argmax(pos[:, 2])  # correct array passed in
     max_alt = pos[max_alt_i, 2]
@@ -106,31 +105,22 @@ if __name__ == "__main__":
     print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
 
     print("--- EXTRA LOG ---")
-    # for i,t in zip(rocket.thrust, time_log):
-    #     print(t, i)
-    #
-    # print(f"max th: {np.max(rocket.thrust)}")
-    # plt.figure()
-    # plt.subplot(2, 2, 1)
-    # plt.plot(time_log, thrust_log, label="Thrust")
-    # # plt.plot(rocket.drags, label="Drag")
-    # plt.xlabel("Forces (N)")
-    # plt.grid(True)
-    #
-    # plt.subplot(2, 2, 2)
-    # plt.plot(time_log, pos_log*3)
-    # plt.xlabel("Alt (m)")
-    # plt.grid(True)
-    #
-    # plt.subplot(2, 2, 3)
-    # plt.plot(time_log, vel_log)
-    # plt.xlabel("Velocity (m/s)")
-    # plt.grid(True)
+    rocket.mfr.append(rocket.mfr[-1]+ 0.00000001)
 
-    rocket.mach.append(rocket.mach[-1]+ 0.00000001)
-    # plt.subplot(2, 2, 4)
-    plt.plot(time_log, rocket.mach)
-    # plt.xlabel("Mass Change")
+    plt.subplot(3, 1, 1)
+    plt.plot(time_log[2:541], rocket.thrust[2:])
+    plt.ylabel("Thrust [N]")
+    plt.grid(True)
+
+    plt.subplot(3,1,2)
+    plt.plot(time_log[2:541], rocket.mfr[2:541])
+    plt.ylabel("Mass Flow Rate [kg/s]")
+    plt.grid(True)
+
+    plt.subplot(3,1,3)
+    plt.plot(time_log[2:541], rocket.pc[2:541])
+    plt.ylabel("Chamber Pressure [Pa]")
+    plt.xlabel("Time [s]")
     plt.grid(True)
 
     plt.tight_layout()

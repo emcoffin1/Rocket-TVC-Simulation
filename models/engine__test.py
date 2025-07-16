@@ -12,7 +12,7 @@ air = AirProfile()
 #     pres.append(air.getStaticPressure(a))
 
 # Plot
-air.getCurrentAtmosphere(altitudes_m=5000, time=0)
+# air.getCurrentAtmosphere(altitudes_m=5000, time=0)
 
 # plt.figure()
 # plt.plot(alt / 1000, pres)

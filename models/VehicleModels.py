@@ -59,11 +59,15 @@ def quaternionDerivative(quat, omega):
 
 class Rocket:
     def __init__(self):
+
         # -- Constants -- #
         self.grav = EnvironmentalModels.GravityModel()       # m/s2
         self.cor = EnvironmentalModels.CoriolisModel()
         self.air = EnvironmentalModels.AirProfile()
         self.wind = EnvironmentalModels.WindProfile()
+
+        # -- Init Atmosphere -- #
+        self.air.getCurrentAtmosphere(altitudes_m=0, time=0)
 
         # -- Vehicle Specific -- #
         self.engine = Engine()
@@ -87,6 +91,8 @@ class Rocket:
         self.thrust = []                         # Thrust curve
         self.burntime = None                     # Time burn stops
         self.mach = []
+        self.mfr = []
+        self.pc = []
 
         # Init print function
         self._initialize_vehicle()
@@ -95,13 +101,14 @@ class Rocket:
 
         a, b, c, d, _, __, static_pres = self.getTotalForce(state=state, dt=dt, side_effect=side_effect)
         force = a + b + c + d
-        # print(f"Drag: {np.linalg.norm(b):.3f}")
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state=state)
+
+        # Update altitude and time for atmospheric model IF side_effect is enabled
+        if side_effect:
+            self.air.getCurrentAtmosphere(altitudes_m=pos[2], time=time)
 
         # Sum of all accelerations --- a = F/m
         acceleration = force / mass
-
-        # print(np.linalg.norm(force))
 
         # -- Quaternion Derivative -- #
         dqdt = quaternionDerivative(quat, omega)
@@ -132,13 +139,16 @@ class Rocket:
         # -- Constants -- #
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state)
         alt_m = pos[2]
+
         rho = self.air.getDensity()
-        # print(rho)
         stat_pres = self.air.getStaticPressure()
 
         if side_effect:
             m = round(self.air.getMachNumber(velocity_mps=np.linalg.norm(vel)), 2)
             self.mach.append(m)
+            a,b = self.engine.combustion_chamber.getMassFlowRate()
+            self.mfr.append(a+b)
+            self.pc.append(self.engine.combustion_chamber.Pc)
 
         # -- Velocity -- #
         v_air = vel - self.wind.getWindVelocity(alt_m=pos[2])
@@ -159,8 +169,7 @@ class Rocket:
             self.burntime = time
         if side_effect and thrust_mag != 0:
             self.thrust.append(thrust_mag)
-        # print(thrust_mag)
-        # print(thrust_mag)
+
         # Thrust_force_body needs to be rotated depending on the TVC angle
         thrust_force_body = np.array([0.0, 0.0, thrust_mag])
         thrust_force_global = R.from_quat(quat).apply(thrust_force_body)
@@ -168,7 +177,6 @@ class Rocket:
         # Drag
         drag_force = self.aerodynamics.getDragForce(vel_m_s=v_air, rho=rho, cross_area=self.structure.xyPlaneArea,
                                                     pos=pos, aoa=aoa, beta=beta)
-        # print(np.linalg.norm(drag_force))
 
         # -- SUMS -- #
         # Sum of forces -- must be a vector
@@ -179,9 +187,8 @@ class Rocket:
         #         )
 
         # Dynamic Pressure
-        q = self.air.getDynamicPressure(alt_m=alt_m, velocity_mps=vel)
+        q = self.air.getDynamicPressure(velocity_mps=vel)
 
-        # print(drag_force)
         return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass), rho, q, stat_pres
 
     def _initialize_vehicle(self):
@@ -242,8 +249,8 @@ class RocketStructure:
         if self.engine.combustion_chamber.active:
             val = (self.cgInitial + ((self.current_mass - self.wetMass) / (self.dryMass - self.wetMass)) *
                     (self.cgFinal - self.cgInitial))
-            # print(val)
             return  val
+
         return self.cgFinal
 
     def getCurrentPYInertia(self):
@@ -302,7 +309,6 @@ class RocketAerodynamics:
 
         Mach_clamped = np.clip(mach, self.cd_M_points[0], self.cd_M_points[-1])
         val = float(np.interp(Mach_clamped, self.cd_M_points, self.cd_points))
-        # print(val)
         return val
         # cd = 0.3 + 0.5 * np.sin(aoa)
         # return cd
@@ -336,7 +342,7 @@ class RocketAerodynamics:
 
         # Direction opposite to motion
         drag_direction = -v_air / v_mag  # explicitly say "opposite"
-        mach = self.air.getMachNumber(pos[2], v_mag)
+        mach = self.air.getMachNumber(v_mag)
         # cd = self.getDragCoeff(pos[2], mach, aoa, beta)
         cd = 0.25
         drag_magnitude = 0.5 * rho * v_mag ** 2 * cd * cross_area

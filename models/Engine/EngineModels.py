@@ -166,18 +166,17 @@ class CombustionChamber:
         Updates chamber pressure using mdot c* / At                                 -- more realistic
         Allows for mdot to vary after ullage pressure drop and blow-down begins
         This relies on the assumption that the chamber pressure is equal to the pressure that
-        is held in the tanks
+        is held in the tanks -- not realistic but fluids system not modeled yet
         """
-        # print(feed_pressure)
 
         f, l = self.getMassFlowRate(feed_pressure)
         self.Pc = (f+l) * self.c_star / self.At
 
+        # Used for flow separation
         if self.separation:
             freq = 50
             amp = 0.05
             self.Pc *= 1.0 + amp * np.sin(2 * np.pi * freq * self.time)
-            # print(f"Separation PC: {self.Pc}")
 
     def getThrust(self) -> float:
         """

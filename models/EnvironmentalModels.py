@@ -72,7 +72,6 @@ class AirProfile:
         self.pres = None
         self.temp = None
 
-
     def getCurrentAtmosphere(self, altitudes_m: float, lat = 33.9, lon = -118.4, time: float = 0):
         """
         Called every time step to update atmospheric conditions
@@ -88,21 +87,22 @@ class AirProfile:
         self.temp = round(float(data[10]), 4)
         self.pres = round((self.rho * self.R * self.temp),4)
 
-        # print(f"RHO: {self.rho}   TEMP: {self.temp}    PRES: {self.pres}")
-
-
     def _update_current_time(self, time):
         """Updates current time domain for accurate models"""
         self.date_time = [self.start_time + datetime.timedelta(seconds=time)]
 
     def getDensity(self):
         """
-        :return density (kg/m3):
+        Gets density from NRLMSISE00
+        :return: density (kg/m3)
         """
         return self.rho
 
     def getStaticPressure(self):
-        """Returns static pressure from NRLMSISE00"""
+        """
+        Gets static pressure from NRLMSISE00
+        :return: [kPa]
+        """
         return self.pres
 
 
@@ -123,14 +123,19 @@ class AirProfile:
         return self.temp
 
     def getSpeedOfSound(self):
-        T = self.getTemperature()
-        print(T)
-        a = math.sqrt(self.gamma * self.R * T)
-
+        """
+        Returns speed of sound using sqrt(YRT)
+        :return: [m/s]
+        """
+        a = math.sqrt(self.gamma * self.R * self.temp)
         return a
 
     def getMachNumber(self, velocity_mps: float):
-
+        """
+        Returns mach number as a function of velocity, temperature, gas constant, temperature
+        :param velocity_mps:
+        :return: mach number
+        """
         a = self.getSpeedOfSound()
         if a > 0:
             return velocity_mps / a

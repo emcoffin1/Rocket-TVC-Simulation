@@ -72,7 +72,7 @@ ax1.grid(True)
 ax1.legend()
 
 ax2.plot(pos_errors, label='Position Error (m)', color='green')
-ax2.set_xlabel('Step')
+ax2.set_xlabel('Step [0.1s]')
 ax2.set_ylabel('Position Error (m)')
 ax2.grid(True)
 ax2.legend()
