@@ -91,6 +91,9 @@ class Rocket:
         self.thrust = []                         # Thrust curve
         self.burntime = None                     # Time burn stops
         self.mach = []
+        self.velocity = []
+        self.reynolds = []
+        self.viscosity = []
         self.mfr = []
         self.pc = []
 
@@ -142,6 +145,8 @@ class Rocket:
 
         rho = self.air.getDensity()
         stat_pres = self.air.getStaticPressure()
+        reynolds = self.air.getReynoldsNumber(np.linalg.norm(vel),characteristic_length=self.structure.diameter)
+        viscosity = self.air.getDynamicViscosity()
 
         if side_effect:
             m = round(self.air.getMachNumber(velocity_mps=np.linalg.norm(vel)), 2)
@@ -149,6 +154,10 @@ class Rocket:
             a,b = self.engine.combustion_chamber.getMassFlowRate()
             self.mfr.append(a+b)
             self.pc.append(self.engine.combustion_chamber.Pc)
+
+            self.reynolds.append(reynolds)
+            self.viscosity.append(viscosity)
+            self.velocity.append(np.linalg.norm(vel))
 
         # -- Velocity -- #
         v_air = vel - self.wind.getWindVelocity(alt_m=pos[2])

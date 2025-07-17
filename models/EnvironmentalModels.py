@@ -77,19 +77,39 @@ class AirProfile:
         Called every time step to update atmospheric conditions
         Time may not be updated if the step is a repeat for rk4 integration
         https://swxtrec.github.io/pymsis/examples/plot_altitude_profiles.html#sphx-glr-examples-plot-altitude-profiles-py
+        This model is reported to be inaccurate below 1000m, so a standard, simplified model will be used until that point
         """
+
+        if altitudes_m < 1000:
+            self.temp = self.T0 - self.L * altitudes_m
+            self._update_gamma()
+            self.pres = self.P0 * (self.temp / self.T0) ** (self.g / (self.R * self.L))
+            self.rho = self.pres / (self.R * self.temp)
+            return
+
         self._update_current_time(time)
         alt_km = altitudes_m / 1000
         output = msis.run([self.date_time], [lat], [lon], [alt_km], [self.f107], [self.f107a], [self.aps])
         data = np.squeeze(output)
 
-        self.rho = round(float(data[0]), 4)
-        self.temp = round(float(data[10]), 4)
+        self.rho = round(float(data[0]), 4) if not np.isnan(data[0]) else 0.0
+        self.temp = round(float(data[10]), 4) if not np.isnan(data[10]) else self.T0
+        self._update_gamma()
         self.pres = round((self.rho * self.R * self.temp),4)
 
     def _update_current_time(self, time):
         """Updates current time domain for accurate models"""
         self.date_time = [self.start_time + datetime.timedelta(seconds=time)]
+
+    def _update_gamma(self):
+        """Accounts for Gamma change over various temperatures using values from:
+        https://www.engineeringtoolbox.com/specific-heat-ratio-d_602.html and converted into the equation
+        gamma = 1.4e^(-6.02e-5 * temp)
+        """
+        # Convert K to c
+        t = self.temp - 273.15
+        gamma = 1.4 * math.exp(-6.02e-5 * t)
+        self.gamma = round(gamma, 3)
 
     def getDensity(self):
         """
@@ -101,7 +121,7 @@ class AirProfile:
     def getStaticPressure(self):
         """
         Gets static pressure from NRLMSISE00
-        :return: [kPa]
+        :return: [Pa]
         """
         return self.pres
 
@@ -142,21 +162,27 @@ class AirProfile:
         return 0.0
 
     def getDynamicViscosity(self):
-        T = self.getTemperature()
-        mu0 = 1.716e-5
-        return mu0 * ((T / self.T0) ** 1.5) * (self.T0 + self.S) / (T + self.S)
+        """Uses sutherlands law to determine kinematic viscosity of air"""
+        mu_ref = 1.716e-5
+        t_ref = 273.15
+        s_ref = 110.4
+
+        term1 = mu_ref * ((self.temp / t_ref) ** (3 / 2))
+        term2 = (t_ref + s_ref) / (self.temp + s_ref)
+
+        return term1 * term2
 
     def getKinematicViscosity(self, alt_m: float):
+        """Uses mu / rho to return kinematic viscosity"""
         mu = self.getDynamicViscosity()
-        rho = self.getDensity()
-        return mu / rho if rho > 0 else 0
+        return mu / self.getDensity()
 
     def getReynoldsNumber(self, velocity_mps: float, characteristic_length: float):
         rho = self.getDensity()
         mu = self.getDynamicViscosity()
         return (rho * velocity_mps * characteristic_length) / mu if mu > 0 else 0
 
-    def getStagnationPressure(self, alt_m: float, velocity_mps: float):
+    def getStagnationPressure(self, velocity_mps: float):
         P = self.getStaticPressure()
         M = self.getMachNumber(velocity_mps=velocity_mps)
         if M < 1e-3:

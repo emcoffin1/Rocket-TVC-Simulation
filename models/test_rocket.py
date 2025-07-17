@@ -105,23 +105,41 @@ if __name__ == "__main__":
     print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
 
     print("--- EXTRA LOG ---")
-    rocket.mfr.append(rocket.mfr[-1]+ 0.00000001)
-
-    plt.subplot(3, 1, 1)
-    plt.plot(time_log[2:541], rocket.thrust[2:])
-    plt.ylabel("Thrust [N]")
+    plt.subplot(3,1,1)
+    plt.plot(time_log[:-1],rocket.velocity)
+    plt.xlabel("Vel")
     plt.grid(True)
 
     plt.subplot(3,1,2)
-    plt.plot(time_log[2:541], rocket.mfr[2:541])
-    plt.ylabel("Mass Flow Rate [kg/s]")
+    plt.plot(time_log[:-1], rocket.viscosity)
+    plt.xlabel("Viscosity")
     plt.grid(True)
 
     plt.subplot(3,1,3)
-    plt.plot(time_log[2:541], rocket.pc[2:541])
-    plt.ylabel("Chamber Pressure [Pa]")
-    plt.xlabel("Time [s]")
+    plt.plot(time_log[:-1], rocket.reynolds)
+    plt.xlabel("Reynolds")
     plt.grid(True)
+
+
+
+
+    # rocket.mfr.append(rocket.mfr[-1]+ 0.00000001)
+    #
+    # plt.subplot(3, 1, 1)
+    # plt.plot(time_log[2:541], rocket.thrust[2:])
+    # plt.ylabel("Thrust [N]")
+    # plt.grid(True)
+    #
+    # plt.subplot(3,1,2)
+    # plt.plot(time_log[2:541], rocket.mfr[2:541])
+    # plt.ylabel("Mass Flow Rate [kg/s]")
+    # plt.grid(True)
+    #
+    # plt.subplot(3,1,3)
+    # plt.plot(time_log[2:541], rocket.pc[2:541])
+    # plt.ylabel("Chamber Pressure [Pa]")
+    # plt.xlabel("Time [s]")
+    # plt.grid(True)
 
     plt.tight_layout()
     plt.show()
