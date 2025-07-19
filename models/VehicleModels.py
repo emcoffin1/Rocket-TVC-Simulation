@@ -72,7 +72,8 @@ class Rocket:
 
         # -- Vehicle Specific -- #
         self.engine = Engine()
-        self.structure = StructuralModel(engine_class=self.engine, liquid_total_ratio=0.56425)
+        #self.structure = StructuralModel(engine_class=self.engine, liquid_total_ratio=0.56425)
+        self.structure = RocketStructure(engine=self.engine)
         self.aerodynamics = RocketAerodynamics(self.air, self.wind)
         self.tvc = RocketTVC()
 
@@ -325,9 +326,12 @@ class RocketAerodynamics:
         val = None
         if x <= 0.8:
             val = 0.103 + -0.0218*x + 0.0174 + x**2
-        elif x<= 0:
-            pass
-
+        elif x <= 1.10:
+            val = -0.859 + 1.76*x + -0.775*x**2
+        elif x <= 2.0:
+            val = -0.037*x + 0.183
+        else:
+            val = 0.097
         return val
         # cd = 0.3 + 0.5 * np.sin(aoa)
         # return cd
