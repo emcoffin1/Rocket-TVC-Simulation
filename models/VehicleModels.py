@@ -2,6 +2,7 @@
 from scipy.spatial.transform import Rotation as R
 import EnvironmentalModels
 from models.Engine.EngineModels import *
+from models.Structural.StructuralModel import StructuralModel
 
 def rk4_step(rocket, state, dt):
 
@@ -71,7 +72,7 @@ class Rocket:
 
         # -- Vehicle Specific -- #
         self.engine = Engine()
-        self.structure = RocketStructure(engine=self.engine)
+        self.structure = StructuralModel(engine_class=self.engine, liquid_total_ratio=0.56425)
         self.aerodynamics = RocketAerodynamics(self.air, self.wind)
         self.tvc = RocketTVC()
 
@@ -218,8 +219,10 @@ class RocketStructure:
         self.zxPlaneArea = self.length * self.diameter
         self.xyPlaneArea = math.pi / 4 * self.diameter**2
 
-        # self.wetMass = 117.8907629  # kg -- 392.182 lbm
-        self.dryMass = 77.5144001   # kg -- 170.890 lbm
+        # Wet mass was determined using a fuel to total weight ratio of
+        # 0.56425, that is fuel_mass / 0.56425 = wet_mass
+        # Value was obtained from original spreadsheet by John
+        self.dryMass = 65.0379   # kg
         self.liquidMass = self.engine.getFluidMass()
         self.wetMass = self.dryMass + self.liquidMass
 
@@ -257,8 +260,8 @@ class RocketStructure:
         """
         if self.engine.combustion_chamber.active:
             val = (self.cgInitial + ((self.current_mass - self.wetMass) / (self.dryMass - self.wetMass)) *
-                    (self.cgFinal - self.cgInitial))
-            return  val
+                   (self.cgFinal - self.cgInitial))
+            return val
 
         return self.cgFinal
 
@@ -306,7 +309,7 @@ class RocketAerodynamics:
             0.2420, 0.2518, 0.2598, 0.2616, 0.2616, 0.2616
         ])
 
-    def getDragCoeff(self, alt: float, mach, aoa: float, beta: float):
+    def getDragCoeff(self, mach, aoa: float = 0):
         """
         Uses poly fit to determine current drag coefficient
         :param alt:
@@ -316,8 +319,15 @@ class RocketAerodynamics:
         :return dragCoeff:
         """
 
-        Mach_clamped = np.clip(mach, self.cd_M_points[0], self.cd_M_points[-1])
-        val = float(np.interp(Mach_clamped, self.cd_M_points, self.cd_points))
+        # Mach_clamped = np.clip(mach, self.cd_M_points[0], self.cd_M_points[-1])
+        # val = float(np.interp(Mach_clamped, self.cd_M_points, self.cd_points))
+        x = mach
+        val = None
+        if x <= 0.8:
+            val = 0.103 + -0.0218*x + 0.0174 + x**2
+        elif x<= 0:
+            pass
+
         return val
         # cd = 0.3 + 0.5 * np.sin(aoa)
         # return cd
@@ -352,8 +362,7 @@ class RocketAerodynamics:
         # Direction opposite to motion
         drag_direction = -v_air / v_mag  # explicitly say "opposite"
         mach = self.air.getMachNumber(v_mag)
-        # cd = self.getDragCoeff(pos[2], mach, aoa, beta)
-        cd = 0.25
+        cd = self.getDragCoeff(mach=mach)
         drag_magnitude = 0.5 * rho * v_mag ** 2 * cd * cross_area
 
         drag = drag_magnitude * drag_direction

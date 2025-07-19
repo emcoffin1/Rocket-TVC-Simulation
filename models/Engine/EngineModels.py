@@ -451,8 +451,8 @@ class Nozzle:
 if __name__ == "__main__":
 
     engine = Engine()
-    # engine.combustion_chamber.get_fluid_setup(burntime=20, ullage_volume=0.05, pressure_target=551581, of_ratio_target=1.8,
-    #                                           mdot_target=4.21,)
+    engine.combustion_chamber.get_fluid_setup(burntime=20, ullage_volume=0.05, pressure_target=551581, of_ratio_target=1.8,
+                                              mdot_target=4.21,)
     t = []
     T = []
     alt = []
