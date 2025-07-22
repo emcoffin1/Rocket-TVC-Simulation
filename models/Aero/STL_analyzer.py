@@ -72,4 +72,4 @@ if __name__ == '__main__':
     triangles *= 0.001  # mm → m
 
     # Show debug silhouette at one example AoA (0° in XZ plane)
-    _ = compute_true_projected_area(triangles, angle_deg=20, axis='z', plane='XZ', debug=True)
+    _ = compute_true_projected_area(triangles, angle_deg=2, axis='z', plane='XZ', debug=True)

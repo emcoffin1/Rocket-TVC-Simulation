@@ -104,23 +104,33 @@ if __name__ == "__main__":
 
     print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
 
-    print("--- EXTRA LOG ---")
+    # print("--- EXTRA LOG ---")
+    # plt.subplot(3,1,1)
+    # plt.plot(time_log[:-1],rocket.velocity)
+    # plt.xlabel("Vel")
+    # plt.grid(True)
+    #
+    # plt.subplot(3,1,2)
+    # plt.plot(time_log[:-1], rocket.viscosity)
+    # plt.xlabel("Viscosity")
+    # plt.grid(True)
+    #
+    # plt.subplot(3,1,3)
+    # plt.plot(time_log[:-1], rocket.reynolds)
+    # plt.xlabel("Reynolds")
+    # plt.grid(True)
+
     plt.subplot(3,1,1)
-    plt.plot(time_log[:-1],rocket.velocity)
-    plt.xlabel("Vel")
+    plt.plot(time_log, quat_log)
     plt.grid(True)
 
     plt.subplot(3,1,2)
-    plt.plot(time_log[:-1], rocket.viscosity)
-    plt.xlabel("Viscosity")
+    plt.plot(time_log, aoa_log)
     plt.grid(True)
 
     plt.subplot(3,1,3)
-    plt.plot(time_log[:-1], rocket.reynolds)
-    plt.xlabel("Reynolds")
+    plt.plot(time_log, pos_log[:,2])
     plt.grid(True)
-
-
 
 
     # rocket.mfr.append(rocket.mfr[-1]+ 0.00000001)

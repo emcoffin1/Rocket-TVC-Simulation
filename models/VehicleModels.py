@@ -3,6 +3,7 @@ from scipy.spatial.transform import Rotation as R
 import EnvironmentalModels
 from models.Engine.EngineModels import *
 from models.Structural.StructuralModel import StructuralModel
+from models.TVC.LqrQuaternionModels import *
 
 def rk4_step(rocket, state, dt):
 
@@ -82,7 +83,7 @@ class Rocket:
             0.0, 0.0, 0.0,                       # Position (x, y, z)
             0.0, 0.0, 0.0,                       # Velocity (vx, vy, vz)
             0.0, 0.0, 0.0, 1.0,                  # Quat  (xi, yj, zk, 1)
-            0.0, 0.0, 0.0,                       # Angular Velocity
+            0.05, 0.0, 0.0,                       # Angular Velocity
             self.structure.wetMass,              # Mass
             0.0,                                 # Time
             0.0, 0.0,                            # AOA, BETA in reference to wind
@@ -117,7 +118,7 @@ class Rocket:
 
         # -- Quaternion Derivative -- #
         dqdt = quaternionDerivative(quat, omega)
-
+        print(quat, "|||",omega, "|||", dqdt)
         # -- Angular Acceleration -- #
         # Currently zero
         domega = np.zeros(3)
@@ -137,6 +138,14 @@ class Rocket:
             [0.0],
             [0.0]
         ])
+
+        # q = np.eye(3) * 1
+        # r = np.eye(3) * 0.1
+        # lqr = LQR(q=q, r=r)
+        # quat_obj = QuaternionFinder(lqr=lqr)
+        # w = quat_obj.getAngularVelocityCorrection(alt_m=0, rocket=quat)
+        # print(f"CURRENT QUAT: {quat}    REQUIRED w: {w}")
+
 
         return dstate
 

@@ -1,8 +1,26 @@
 # from ansys.fluent.core import launch_fluent, UIMode
+import csv
+
 from ansys.fluent.core import *
 import numpy as np
 import os
+import io
+from contextlib import redirect_stdout
+aoa = 0
 
+flow_field = [
+    np.sin(np.deg2rad(aoa)),        # no roll/yaw — X is 0
+    -np.cos(np.deg2rad(aoa)),       # into –Y (freestream)
+    0.0                             # into –Z (pitch component)
+]
+
+drag_field = flow_field
+
+lift_field = [
+    np.cos(np.deg2rad(aoa)),        # no roll/yaw — X is 0
+    np.sin(np.deg2rad(aoa)),       # into –Y (freestream)
+    0.0                             # into –Z (pitch component)
+]
 # -------------------------
 # 💡 Constants and Inputs
 # -------------------------
@@ -10,7 +28,10 @@ print("🔧 Initializing constants...")
 T_inf = 288.15  # Freestream temperature [K]
 gamma = 1.4
 R = 287.05      # Gas constant [J/kg-K]
-mach_list = [0.4, 0.6]
+start = 2.0
+stop = 5.0
+num = stop / 0.5
+mach_list = np.linspace(start=start, stop=stop, num=6)
 ROCKET_SURF = "rocket_body"
 FARFIELD_SURF = "farfield"
 
@@ -89,14 +110,14 @@ session.settings.solution.methods.high_order_term_relaxation.enable = True
 
 session.settings.solution.report_definitions.drag["drag"] = {}
 drag_def = session.settings.solution.report_definitions.drag["drag"]
-drag_def.force_vector       = [0.0, 1.0, 0.0]
+drag_def.force_vector       = drag_field
 drag_def.zones              = [ROCKET_SURF]
 drag_def.report_output_type = "Drag Force"
 drag_def.create_output_parameter()
 
 session.settings.solution.report_definitions.lift["lift"] = {}
 lift_def = session.settings.solution.report_definitions.lift["lift"]
-lift_def.force_vector       = [1.0, 0.0, 0.0]
+lift_def.force_vector       = lift_field
 lift_def.zones              = [ROCKET_SURF]
 lift_def.report_output_type = "Lift Force"
 lift_def.create_output_parameter()
@@ -105,7 +126,7 @@ session.settings.solution.report_definitions.moment["moment"] = {}
 mom_def = session.settings.solution.report_definitions.moment["moment"]
 mom_def.report_type       = "moment"
 mom_def.zones              = [ROCKET_SURF]
-mom_def.mom_center  = [0.0,0.0,0.0]
+mom_def.mom_center  = [0.0,5.4862,0.0]
 mom_def.mom_axis = [0.0,0.0,1.0]
 mom_def.create_output_parameter()
 
@@ -116,110 +137,56 @@ vel_ref.field = "y-velocity"
 vel_ref.surface_names = [FARFIELD_SURF]
 vel_ref.create_output_parameter()
 
+
+session.settings.solution.report_definitions.volume["dens_mag"] = {}
+rho_def = session.settings.solution.report_definitions.volume["dens_mag"]
+rho_def.report_type = "volume-average"
+rho_def.field = "density"
+rho_def.cell_zones = ["enclosure-enclosure"]
+rho_def.create_output_parameter()
+
+session.settings.solution.report_definitions.volume["reynolds"] = {}
+reynolds = session.settings.solution.report_definitions.volume["reynolds"]
+reynolds.report_type = "volume-average"
+reynolds.field = "cell-reynolds-number"
+reynolds.cell_zones = ["enclosure-enclosure"]
+reynolds.create_output_parameter()
+
 results = []
-# -------------------------
-# 🔁 Mach Sweep Loop
-# -------------------------
+
 for mach in mach_list:
-    print(f"\n🔄 Starting simulation for Mach {mach}...")
+    print(f"\n🔄 Starting simulation for Mach {mach:.2f}…")
 
-    # Freestream velocity
-    a_inf = np.sqrt(gamma * R * T_inf)
-    v_inf = mach * a_inf
-
-    # Boundary conditions (assumes 'inlet' is a pressure-far-field)
-    print("   🔧 Setting boundary conditions...")
+    # 1) Set the new farfield mach
     inlet = session.settings.setup.boundary_conditions.pressure_far_field[FARFIELD_SURF]
-
     inlet.set_state({
         "m": {"option": "value", "value": mach},
-        "t": {"option": "value", "value": 288.13},
+        "t": {"option": "value", "value": T_inf},
         "flow_direction": [
-            {"option": "value", "value": 0},
-            {"option": "value", "value": -1},
-            {"option": "value", "value": 0},
+            {"option": "value", "value": flow_field[0]},   # 2 degree rotation into x (aoa 2)
+            {"option": "value", "value": flow_field[1]},   # 2 degree rotation into x (aoa 2)
+            {"option": "value", "value": flow_field[2]},
         ]
     })
 
-
-    session.settings.setup.general.operating_conditions.operating_pressure = 101325
-
-
-    # print("   ⚡ Initializing flow field...")
     session.settings.solution.initialization.hybrid_initialize()
+    session.settings.solution.run_calculation.iterate(iter_count=150)
+    print("--Simulation Completed--")
 
-    session.settings.solution.run_calculation.pseudo_time_settings.time_step_method.set_state({
-        'time_step_method': 'automatic', 'length_scale_methods': 'conservative', 'time_step_size_scale_factor': 0.1
-    })
-    session.settings.solution.run_calculation.iter_count = 1
+    print("="*90)
+    print("=" * 90)
+    print(f"MACH: {mach}")
+    vals = session.settings.solution.report_definitions.compute(
+        report_defs=["vel_mag", "drag", "lift", "moment", "dens_mag", "reynolds"])
+    results.append(vals)
+    print("=" * 90)
+    print("=" * 90)
 
+with open(f"sweep_aoa{aoa}_", mode='w', newline='') as file:
+    writer = csv.writer(file)
+    for item in results:
+        writer.writerow([item])
+print("File saved!")
+for x in results:
+    print(x)
 
-    # print(session.settings.solution.report_definitions.get_state())
-
-    # session.settings.solution.report_definitions.set_state({
-    #     'surface': {
-    #         'vel-magnitude': {
-    #             'name': 'vel-magnitude',
-    #             'report_type': 'surface-areaavg',
-    #             'field': 'velocity-magnitude',
-    #             'surface_names': ['farfield'],
-    #             'per_surface': False,
-    #             'average_over': 1,
-    #             'retain_instantaneous_values': False
-    #         }
-    #     },
-    #     'drag': {
-    #         'drag-force': {
-    #             'name': 'drag-force',
-    #             'force_vector': [0.0, 1.0, 0.0],  # Opposite of freestream (-Y)
-    #             'reference_frame': 'global',
-    #             'zones': ['rocket_body'],
-    #             'per_zone': False,
-    #             'average_over': 1,
-    #             'retain_instantaneous_values': False,
-    #             'report_output_type': 'Drag Force'
-    #         }
-    #     },
-    #     'lift': {
-    #         'lift-force': {
-    #             'name': 'lift-force',
-    #             'report_type': 'force',
-    #             'force_vector': [1.0, 0.0, 0.0],  # X is lift for -Y freestream
-    #             'reference_frame': 'global',
-    #             'zones': ['rocket_body'],
-    #             'per_zone': False,
-    #             'average_over': 1,
-    #             'retain_instantaneous_values': False,
-    #             'report_output_type': 'Lift Force'
-    #         }
-    #     },
-    #     'moment': {
-    #         'moment-z': {
-    #             'name': 'moment-z',
-    #             'report_type': 'moment',
-    #             # 'moment_center': [0.0, 5.4862, 0.0],  # Change if needed
-    #             # 'moment_axis': [0.0, 0.0, 1.0],  # About Z-axis
-    #             # 'reference_frame': 'global',
-    #             'zones': ['rocket_body'],
-    #             # 'per_zone': False,
-    #             # 'average_over': 1,
-    #             # 'retain_instantaneous_values': False
-    #         }
-    #     }
-    # })
-
-
-
-
-
-    print("🧮 Running calculation...")
-    session.settings.solution.run_calculation.iterate(iter_count=1)
-    print("✅ Simulation complete.")
-
-
-    print(f"Mach: {mach}")
-    session.settings.solution.report_definitions.compute(report_defs=["vel_mag", "drag", "lift", "moment"])
-    # print(f"✅ Drag @ Mach {mach} = {drag_val:.3f} N")
-
-import pandas as pd
-pd.DataFrame(results).to_csv("aero_sweep_results.csv", index=False)
