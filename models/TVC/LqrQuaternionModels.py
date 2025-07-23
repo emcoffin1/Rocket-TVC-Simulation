@@ -61,7 +61,6 @@ class QuaternionFinder:
         if np.linalg.norm(l_e) == 0:
             q_trans_e = np.array([0,0,0,1])
         else:
-            # l_e = l_e / np.linalg.norm(l_e)         # Normalized error displacement (BREAKS MATH)
 
             target_v_body = np.array([0, 0, 1])   # Nose up z axis
             c_v = np.linalg.cross(target_v_body, l_e)    # correction vector should be based on the quaternion correction
@@ -69,23 +68,16 @@ class QuaternionFinder:
             s = np.sqrt((1 + c) * 2)
             q_trans_e = np.array([c_v[0]/s, c_v[1]/s, c_v[2]/s, s/2])
             q_trans_e = q_trans_e / np.linalg.norm(q_trans_e)
-            # print(np.round(rocket_loc, 2), np.round(l_t, 2), np.round(l_e, 2))
-            # print(f"NOT CLIPPED: {np.round(q_trans_e,2)}")
             if np.isclose(c, -1.0):
                 q_trans_e = np.array([1, 0, 0, 0])  # 180 deg flip around x
 
 
         q_e_combined = self._quat_mult(q_trans_e, q_e)     # Multiply to first apply the translation and then the attitude
         qdot = self.LQR.get_Qdot(q_e=q_e_combined)
-        # print(f"trans: {np.round(q_trans_e,2)}, qe: {np.round(q_e, 2)},combiend: {np.round(q_e_combined,2)}, rocket_at: {rocket_quat}")
-        # print(f"ERROR: {np.round(l_e,2)}")
         q_corr_i = self._quat_conj(q=q_e_combined)
 
         omega_quat = self._quat_mult(qdot, q_corr_i)
-        # print(round(alt_m,2),np.round(q_trans_e, 2), np.round(q_e_combined,2))
         w = 2 * omega_quat[:3]
-        # print(f"Trans error: {np.round(l_e,2)} || Quat Error: {np.round(q_e,2)} || omega: {np.round(w,2)} || qdot: {np.round(qdot,2)}")
-        # print(f"CLIPPED: {np.round(q_trans_e, 2)}, ERROR: {np.round(l_e,2)}, OMEGA: {np.round(w,2)}, QDOT: {np.round(qdot,2)}")
         return w
 
     def _find_translational_error(self, trajectory: np.array, rocket: np.array):
@@ -177,3 +169,15 @@ class QuaternionFinder:
         except Exception as e:
             print(f"ERROR:      {e}")
             print(f"LOCATION:   QuaternionFinder._load_lookup_table()")
+
+
+if __name__ == "__main__":
+    q = np.eye(3) * 5
+    r = np.eye(3) * 1
+    traj = np.array([0, 0, 0, 1])
+    att = np.array([1,4,0,1])
+    loc = np.array([0, 0, 1])
+
+    quat = QuaternionFinder(lqr=LQR(q=q, r=r))
+
+    print(quat.getAngularVelocityCorrection(rocket_loc=loc, rocket_quat=att))

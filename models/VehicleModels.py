@@ -172,7 +172,7 @@ class Rocket:
             self.reynolds.append(reynolds)
             self.viscosity.append(viscosity)
             self.velocity.append(np.linalg.norm(vel))
-            # print(round(time,2))
+            print(round(time,2), np.round(quat,2))
 
         # -- Velocity -- #
         v_air = vel - self.wind.getWindVelocity(alt_m=pos[2])
@@ -212,7 +212,7 @@ class Rocket:
 
         domega = torque_body / self.structure.I
         domega = np.clip(domega, -100.0, 100.0)
-        # domega = np.zeros(3)
+        domega = np.zeros(3)
 
         # r_tvc = R.from_euler('yx', [-theta_y, -theta_x])
         r_x = R.from_euler('x', -theta_x)

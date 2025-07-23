@@ -49,4 +49,14 @@ class TVCStructure:
         self.cg = self.structural_model.cm_current
 
 
+if __name__ == "__main__":
+    from models.Structural.StructuralModel import StructuralModel
+    from models.Engine.EngineModels import Engine
+    q = np.eye(3) * 5
+    r = np.eye(3) * 1
+
+    tvc = TVCStructure(lqr=LQR(q=q, r=r), structure_model=StructuralModel(engine_class=Engine(),  liquid_total_ratio=0.56425))
+
+
+
 
