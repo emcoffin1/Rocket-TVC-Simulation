@@ -3,7 +3,9 @@ from scipy.spatial.transform import Rotation as R
 import EnvironmentalModels
 from models.Engine.EngineModels import *
 from models.Structural.StructuralModel import StructuralModel
-from models.TVC.LqrQuaternionModels import *
+from models.TVC.TVCModel import *
+from models.TVC.LqrQuaternionModels import LQR, QuaternionFinder
+from models.Aero.AerodynamicsModel import *
 
 def rk4_step(rocket, state, dt):
 
@@ -73,9 +75,10 @@ class Rocket:
 
         # -- Vehicle Specific -- #
         self.engine = Engine()
-        #self.structure = StructuralModel(engine_class=self.engine, liquid_total_ratio=0.56425)
-        self.structure = RocketStructure(engine=self.engine)
-        self.aerodynamics = RocketAerodynamics(self.air, self.wind)
+        self.structure = StructuralModel(engine_class=self.engine, liquid_total_ratio=0.56425)
+        # self.structure = RocketStructure(engine=self.engine)
+        # self.aerodynamics = RocketAerodynamics(self.air, self.wind)
+        self.aerodynamics = Aerodynamics(self.air)
         self.tvc = RocketTVC()
 
         # -- States -- #
@@ -83,7 +86,7 @@ class Rocket:
             0.0, 0.0, 0.0,                       # Position (x, y, z)
             0.0, 0.0, 0.0,                       # Velocity (vx, vy, vz)
             0.0, 0.0, 0.0, 1.0,                  # Quat  (xi, yj, zk, 1)
-            0.05, 0.0, 0.0,                       # Angular Velocity
+            0.0, 0.0, 0.0,                       # Angular Velocity
             self.structure.wetMass,              # Mass
             0.0,                                 # Time
             0.0, 0.0,                            # AOA, BETA in reference to wind
@@ -111,20 +114,22 @@ class Rocket:
 
         # Update altitude and time for atmospheric model IF side_effect is enabled
         if side_effect:
+            #print(pos[2], time, force, mass)
             self.air.getCurrentAtmosphere(altitudes_m=pos[2], time=time)
+            self.structure.updateProperties()
 
         # Sum of all accelerations --- a = F/m
         acceleration = force / mass
 
         # -- Quaternion Derivative -- #
         dqdt = quaternionDerivative(quat, omega)
-        print(quat, "|||",omega, "|||", dqdt)
+        # print(quat, "|||",omega, "|||", dqdt)
         # -- Angular Acceleration -- #
         # Currently zero
         domega = np.zeros(3)
 
         # -- Mass Change -- #
-        dmdt = -self.structure.getMassChange()
+        dmdt = self.structure.dm
 
         # -- State Derivative -- #
         # The change in state variables
@@ -139,12 +144,7 @@ class Rocket:
             [0.0]
         ])
 
-        # q = np.eye(3) * 1
-        # r = np.eye(3) * 0.1
-        # lqr = LQR(q=q, r=r)
-        # quat_obj = QuaternionFinder(lqr=lqr)
-        # w = quat_obj.getAngularVelocityCorrection(alt_m=0, rocket=quat)
-        # print(f"CURRENT QUAT: {quat}    REQUIRED w: {w}")
+
 
 
         return dstate
@@ -180,7 +180,7 @@ class Rocket:
 
         # -- Accelerations -- #
         gravity = self.grav.getGravity(alt_m=alt_m)
-        coriolis_acc = self.cor.getCoriolisEffect(vel_m_s=vel)
+        coriolis_acc = self.cor.getCoriolisEffect(vel_m_s=v_air_body)
 
         # -- Forces -- #
         # Thrust
@@ -195,9 +195,11 @@ class Rocket:
         thrust_force_global = R.from_quat(quat).apply(thrust_force_body)
 
         # Drag
-        drag_force = self.aerodynamics.getDragForce(vel_m_s=v_air, rho=rho, cross_area=self.structure.xyPlaneArea,
-                                                    pos=pos, aoa=aoa, beta=beta)
-
+        # drag_force = self.aerodynamics.getDragForce(vel_m_s=v_air, rho=rho, cross_area=self.structure.xyPlaneArea,
+        #                                             pos=pos, aoa=aoa, beta=beta)
+        drag_force = self.aerodynamics.getDragForce(vel=v_air_body)
+        # print(drag_force)
+        # drag_force = 0
         # -- SUMS -- #
         # Sum of forces -- must be a vector
         # force = (thrust_force_global
@@ -209,6 +211,15 @@ class Rocket:
         # Dynamic Pressure
         q = self.air.getDynamicPressure(velocity_mps=vel)
 
+
+        # q = np.eye(3) * 1
+        # r = np.eye(3) * 0.1
+        # lqr = LQR(q=q, r=r)
+        # quat_obj = QuaternionFinder(lqr=lqr)
+        # theta = TVCStructure(quaternion=quat_obj, structure_model=self.structure)
+        # theta.update_variables_(thrust=thrust_mag)
+        # t_x, t_y = theta._calculate_theta(dt=dt, rocket_quat=quat, rocket_location=pos)
+        # print(f"X: {t_x}   Y:{t_y}")
         return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass), rho, q, stat_pres
 
     def _initialize_vehicle(self):
@@ -216,7 +227,8 @@ class Rocket:
         print("=" * 60)
         print("INITIALIZING VEHICLE")
         print(f"Initial Vehicle Mass:   {self.structure.wetMass} [kg]")
-        print(f"Initial Fluid Mass:     {self.structure.liquidMass} [kg]")
+        # print(f"Initial Fluid Mass:     {self.structure.liquidMass} [kg]")
+        print(f"Initial Fluid Mass:     {self.structure.fluid_mass} [kg]")
         print("=" * 60)
 
 

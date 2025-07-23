@@ -12,22 +12,11 @@ https://ntrs.nasa.gov/api/citations/20220007178/downloads/Free_flight_of_MPCV.pd
 import matplotlib.pyplot as plt
 import numpy as np
 class Aerodynamics:
-    aoa0 = None
-    aoa1 = None
-    aoa2 = None
-    aoa3 = None
-    aoa4 = None
-    aoa5 = None
-    aoa6 = None
-    aoa7 = None
-    aoa8 = None
-    aoa9 = None
-    aoa10 = None
-    def __init__(self):
+    def __init__(self, air):
         # -- Initialize other models -- #
-        #self.air = air_profile
-        pass
-    def getDragCoeff(self, mach_v):
+        self.air = air
+
+    def _get_drag_coeff(self, mach_v):
         # Get mach value
         x = mach_v
         cd = None
@@ -39,13 +28,27 @@ class Aerodynamics:
             cd = -0.149*x + 0.733
         return cd
 
-#
-air = Aerodynamics()
-mach = np.arange(0, 5, 0.01)
-cd = []
-for x in mach:
-    cd.append(air.getDragCoeff(x))
+    def getDragForce(self, vel, aoa = None):
+        v_mag = np.linalg.norm(vel)
+        if v_mag == 0:
+            return np.zeros(3)
 
-plt.plot(mach, cd)
-plt.grid(True)
-plt.show()
+        mach = self.air.getMachNumber(velocity_mps=v_mag)
+        drag_direction = -vel / v_mag
+        cd = self._get_drag_coeff(mach_v=mach)
+        drag = 0.5 * self.air.rho * vel ** 2 * cd * 0.0545
+        return drag * drag_direction
+
+
+
+
+# #
+# air = Aerodynamics()
+# mach = np.arange(0, 5, 0.01)
+# cd = []
+# for x in mach:
+#     cd.append(air.getDragCoeff(x))
+#
+# plt.plot(mach, cd)
+# plt.grid(True)
+# plt.show()

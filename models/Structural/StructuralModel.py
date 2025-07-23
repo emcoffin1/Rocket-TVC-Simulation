@@ -46,6 +46,7 @@ class StructuralModel:
             FlexModes(mode_num=1, frequency=8.0, damping=0.02, modal_mass=0.3 * self.mass_current),
             FlexModes(mode_num=2, frequency=24.0, damping=0.03, modal_mass=0.15 * self.mass_current)
         ]
+        self._update_Inertia()
 
 
     def updateProperties(self):

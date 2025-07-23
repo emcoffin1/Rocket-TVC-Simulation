@@ -11,7 +11,7 @@ def print_results(time, pos, vel, q, rocket):
 
     # Burntime
     max_th_i = np.argmax(rocket.thrust)
-    print(f"Burn Time:      {rocket.burntime}s")
+    print(f"Burn Time:      {rocket.burntime:.2f}s")
     print(f"Average Thrust: {np.average(rocket.thrust):.2f}N")
     print(f"Max Thrust:     {np.max(rocket.thrust):.2f}N at Time: {time[max_th_i]:.2f}s")
 
@@ -73,7 +73,7 @@ if __name__ == "__main__":
         # print(time, ", ", a[2])
         thrust_log.append(b)
         drag_log.append(b)
-        dynamicpress_log.append(q)
+        dynamicpress_log.append(np.linalg.norm(q))
         # Log data
         time_log.append(time)
         pos_log.append(pos)
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     thrust_log = np.array(thrust_log)
     drag_log = np.array(drag_log)
     density_log = np.array(density_log)
-    dynamicpress_log = np.array(dynamicpress_log)
+    # dynamicpress_log = np.array(dynamicpress_log)
 
     print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
 
@@ -121,11 +121,11 @@ if __name__ == "__main__":
     # plt.grid(True)
 
     plt.subplot(3,1,1)
-    plt.plot(time_log, quat_log)
+    plt.plot(time_log, vel_log)
     plt.grid(True)
 
     plt.subplot(3,1,2)
-    plt.plot(time_log, aoa_log)
+    plt.plot(time_log, thrust_log)
     plt.grid(True)
 
     plt.subplot(3,1,3)

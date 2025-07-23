@@ -87,6 +87,7 @@ class AirProfile:
             self.rho = self.pres / (self.R * self.temp)
             return
 
+
         self._update_current_time(time)
         alt_km = altitudes_m / 1000
         output = msis.run([self.date_time], [lat], [lon], [alt_km], [self.f107], [self.f107a], [self.aps])

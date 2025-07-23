@@ -51,14 +51,17 @@ class QuaternionFinder:
         # Translational Correction
         l_t = self._get_trajectory_location(alt_m=alt_m)
         l_e = l_t - rocket_loc
-        l_e = l_e / np.linalg.norm(l_e)         # Normalized error displacement
+        if np.linalg.norm(l_e) == 0:
+            q_trans_e = np.array([0,0,0,1])
+        else:
+            l_e = l_e / np.linalg.norm(l_e)         # Normalized error displacement
 
-        target_v_body = np.array([0, 0, 1])   # Nose up z axis
-        c_v = np.linalg.cross(target_v_body, l_e)    # correction vector should be based on the quaternion correction
-        c = np.dot(target_v_body, l_e)
-        s = np.sqrt((1 + c) * 2)
-        q_trans_e = np.array([c_v[0]/s, c_v[1]/s, c_v[2]/s, s/2])
-        q_trans_e = q_trans_e / np.linalg.norm(q_trans_e)
+            target_v_body = np.array([0, 0, 1])   # Nose up z axis
+            c_v = np.linalg.cross(target_v_body, l_e)    # correction vector should be based on the quaternion correction
+            c = np.dot(target_v_body, l_e)
+            s = np.sqrt((1 + c) * 2)
+            q_trans_e = np.array([c_v[0]/s, c_v[1]/s, c_v[2]/s, s/2])
+            q_trans_e = q_trans_e / np.linalg.norm(q_trans_e)
 
         q_e_combined = self._quat_mult(q_trans_e, q_e)     # Multiply to first apply the translation and then the attitude
 
@@ -67,7 +70,6 @@ class QuaternionFinder:
         q_corr_i = self._quat_conj(q=q_e_combined)
 
         omega_quat = self._quat_mult(qdot, q_corr_i)
-
         w = 2 * omega_quat[:3]
         return w
 
@@ -79,16 +81,24 @@ class QuaternionFinder:
         :return: translational error [x,y,z]
         """
 
+    def _find_quaternion_error(self, trajectory: np.ndarray, rocket: np.ndarray):
+        rocket_i = self._quat_conj(rocket)
+        q_e = self._quat_mult(trajectory, rocket_i)
+        q_e = q_e / np.linalg.norm(q_e)
+        return q_e
+
 
     def _get_trajectory_attitude(self, alt_m: float = 0):
         """Accesses attitude trajectory based on altitude and acquires quaternion"""
         if alt_m == 0:
             return np.array([0, 0, 0, 1])
+        return np.array([0, 0, 0, 1])
 
     def _get_trajectory_location(self, alt_m: float = 0):
         """Access location trajectory based on altitude"""
         if alt_m == 0:
-            return np.array([0, 0, 0])
+            return np.array([0, 0, alt_m])
+        return np.array([0, 0, alt_m])
 
     def _quat_conj(self, q):
         """
