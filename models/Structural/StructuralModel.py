@@ -37,6 +37,11 @@ class StructuralModel:
         # -- Moments of Inertia [kg*m^2] -- #
         self.roll_inertia = None                                    # [kg*m^2] Roll inertia (does not change)
         self.pitch_yaw_inertia = None                               # [kg8m^2] Pitch and yaw inertia (does change)
+        self.I = np.array([
+            self.pitch_yaw_inertia,
+            self.pitch_yaw_inertia,
+            self.roll_inertia
+        ])
 
         # -- Variables -- #
         self.mass_current = self.wetMass                            # [kg] Adaptive flight mass
@@ -95,6 +100,12 @@ class StructuralModel:
         # Assumes thin-walled shell
         # m/12 * L^2
         self.pitch_yaw_inertia = (1/12) * self.mass_current * self.length**2
+
+        self.I = np.array([
+            self.pitch_yaw_inertia,
+            self.pitch_yaw_inertia,
+            self.roll_inertia
+        ])
 
     def get_structural_moment(self):
         total = 0

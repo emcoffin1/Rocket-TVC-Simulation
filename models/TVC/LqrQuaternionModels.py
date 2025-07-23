@@ -1,8 +1,10 @@
 """Program that takes positional data and determines the quaternion error, passes through an LQR, and provides
 a corrective quaternion to change the angular velocity"""
 import numpy as np
+import pandas as pd
 from scipy.linalg import solve_continuous_are
-
+from scipy.interpolate import interp1d
+import os
 
 class LQR:
     def __init__(self, q: np.ndarray = None, r: np.ndarray = None):
@@ -34,6 +36,8 @@ class QuaternionFinder:
         self.earth_frame = np.array([0, 0.0, 0.0, 0.0])
         self.LQR = lqr if lqr is not None else LQR()
 
+        self._load_lookup_table()
+
     def getAngularVelocityCorrection(self, rocket_loc: np.array, rocket_quat: np.array):
         """
         Computes and returns the angular velocity correction to maintain trajectory
@@ -42,14 +46,14 @@ class QuaternionFinder:
         :param rocket_quat: rocket quaternion [
         :return: angular velocity to correct quaternion error
         """
+        # Get Target Paths
         alt_m = rocket_loc[2]
+        l_t, q_t = self._get_pose_by_altitude(alt=alt_m)
 
         # Attitude Correction Quaternion
-        q_t = self._get_trajectory_attitude(alt_m=alt_m)
         q_e = self._find_quaternion_error(trajectory=q_t, rocket=rocket_quat)
 
         # Translational Correction
-        l_t = self._get_trajectory_location(alt_m=alt_m)
         l_e = l_t - rocket_loc
         if np.linalg.norm(l_e) == 0:
             q_trans_e = np.array([0,0,0,1])
@@ -71,6 +75,8 @@ class QuaternionFinder:
 
         omega_quat = self._quat_mult(qdot, q_corr_i)
         w = 2 * omega_quat[:3]
+        # print(f"[LQR] q_error norm = {np.linalg.norm(q_e_combined[:3]):.3f}")
+
         return w
 
     def _find_translational_error(self, trajectory: np.array, rocket: np.array):
@@ -92,6 +98,7 @@ class QuaternionFinder:
         """Accesses attitude trajectory based on altitude and acquires quaternion"""
         if alt_m == 0:
             return np.array([0, 0, 0, 1])
+
         return np.array([0, 0, 0, 1])
 
     def _get_trajectory_location(self, alt_m: float = 0):
@@ -126,3 +133,42 @@ class QuaternionFinder:
         ])
 
 
+        # LOOK UP METHOD
+        # import pandas as pd
+        # import numpy as np
+        #
+        # # Load table
+
+    def _get_pose_by_altitude(self, alt: float):
+        try:
+            pos = np.array([
+                self.interp_x(alt),
+                self.interp_y(alt),
+                alt
+            ])
+            quat = np.array([
+                self.interp_qx(alt),
+                self.interp_qy(alt),
+                self.interp_qz(alt),
+                self.interp_qw(alt)
+            ])
+            return pos, quat
+        except Exception as e:
+            print(f"QuaternionFinder lookup error: {e}")
+            return np.array([0, 0, alt]), np.array([0, 0, 0, 1])
+
+    def _load_lookup_table(self):
+        try:
+            PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+            filename = os.path.join(PROJECT_ROOT, "missile_profile.csv")
+            df = pd.read_csv(filename)
+            # Build interpolators
+            self.interp_x = interp1d(df['z'], df['x'], kind='linear', bounds_error=False, fill_value='extrapolate')
+            self.interp_y = interp1d(df['z'], df['y'], kind='linear', bounds_error=False, fill_value='extrapolate')
+            self.interp_qx = interp1d(df['z'], df['qx'], kind='linear', bounds_error=False, fill_value='extrapolate')
+            self.interp_qy = interp1d(df['z'], df['qy'], kind='linear', bounds_error=False, fill_value='extrapolate')
+            self.interp_qz = interp1d(df['z'], df['qz'], kind='linear', bounds_error=False, fill_value='extrapolate')
+            self.interp_qw = interp1d(df['z'], df['qw'], kind='linear', bounds_error=False, fill_value='extrapolate')
+        except Exception as e:
+            print(f"ERROR:      {e}")
+            print(f"LOCATION:   QuaternionFinder._load_lookup_table()")

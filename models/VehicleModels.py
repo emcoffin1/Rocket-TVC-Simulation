@@ -1,11 +1,11 @@
-
+import numpy as np
 from scipy.spatial.transform import Rotation as R
-import EnvironmentalModels
 from models.Engine.EngineModels import *
 from models.Structural.StructuralModel import StructuralModel
 from models.TVC.TVCModel import *
 from models.TVC.LqrQuaternionModels import LQR, QuaternionFinder
 from models.Aero.AerodynamicsModel import *
+from models import EnvironmentalModels
 
 def rk4_step(rocket, state, dt):
 
@@ -64,11 +64,17 @@ def quaternionDerivative(quat, omega):
 class Rocket:
     def __init__(self):
 
+        q = np.eye(3) * 5
+        r = np.eye(3) * 10
+        # q = np.eye(3) * 1.0
+        # r = np.eye(3) * 100.0
+
         # -- Constants -- #
         self.grav = EnvironmentalModels.GravityModel()       # m/s2
         self.cor = EnvironmentalModels.CoriolisModel()
         self.air = EnvironmentalModels.AirProfile()
         self.wind = EnvironmentalModels.WindProfile()
+        self.lqr = LQR(q=q, r=r)
 
         # -- Init Atmosphere -- #
         self.air.getCurrentAtmosphere(altitudes_m=0, time=0)
@@ -76,10 +82,8 @@ class Rocket:
         # -- Vehicle Specific -- #
         self.engine = Engine()
         self.structure = StructuralModel(engine_class=self.engine, liquid_total_ratio=0.56425)
-        # self.structure = RocketStructure(engine=self.engine)
-        # self.aerodynamics = RocketAerodynamics(self.air, self.wind)
         self.aerodynamics = Aerodynamics(self.air)
-        self.tvc = RocketTVC()
+        self.tvc = TVCStructure(lqr=self.lqr, structure_model=self.structure)
 
         # -- States -- #
         self.state = np.array([
@@ -107,8 +111,7 @@ class Rocket:
         self._initialize_vehicle()
 
     def getDynamics(self, state, dt: float, side_effect: bool = True):
-
-        a, b, c, d, _, __, static_pres = self.getTotalForce(state=state, dt=dt, side_effect=side_effect)
+        a, b, c, d, _, __, static_pres, domega = self.getTotalForce(state=state, dt=dt, side_effect=side_effect)
         force = a + b + c + d
         pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state=state)
 
@@ -118,6 +121,7 @@ class Rocket:
             self.air.getCurrentAtmosphere(altitudes_m=pos[2], time=time)
             self.structure.updateProperties()
 
+
         # Sum of all accelerations --- a = F/m
         acceleration = force / mass
 
@@ -125,8 +129,7 @@ class Rocket:
         dqdt = quaternionDerivative(quat, omega)
         # print(quat, "|||",omega, "|||", dqdt)
         # -- Angular Acceleration -- #
-        # Currently zero
-        domega = np.zeros(3)
+        # handled directly in forces
 
         # -- Mass Change -- #
         dmdt = self.structure.dm
@@ -169,6 +172,7 @@ class Rocket:
             self.reynolds.append(reynolds)
             self.viscosity.append(viscosity)
             self.velocity.append(np.linalg.norm(vel))
+            # print(round(time,2))
 
         # -- Velocity -- #
         v_air = vel - self.wind.getWindVelocity(alt_m=pos[2])
@@ -185,42 +189,56 @@ class Rocket:
         # -- Forces -- #
         # Thrust
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
+        self.tvc.update_variables_(thrust_mag)
+        # Pitch (around x) Yaw (around y)
+        theta_x, theta_y = self.tvc.calculate_theta(dt=dt, rocket_location=pos, rocket_quat=quat)
+
+
+
+
+        limit = np.deg2rad(25)
+        theta_x = np.clip(theta_x, -limit, limit)
+        theta_y = np.clip(theta_y, -limit, limit)
+
+        L = self.structure.length
+        torque_body = np.array([
+            L * thrust_mag * np.sin(theta_y),
+            -L * thrust_mag * np.sin(theta_x),
+            0.0
+        ])
+
+        domega = torque_body / self.structure.I
+        domega = np.clip(domega, -100.0, 100.0)
+        # domega = np.zeros(3)
+
+        r_tvc = R.from_euler('xy', [-theta_x, -theta_y])
+
         if thrust_mag == 0 and not self.burntime:
             self.burntime = time
         if side_effect and thrust_mag != 0:
             self.thrust.append(thrust_mag)
 
+
+
         # Thrust_force_body needs to be rotated depending on the TVC angle
-        thrust_force_body = np.array([0.0, 0.0, thrust_mag])
-        thrust_force_global = R.from_quat(quat).apply(thrust_force_body)
+        thrust_force_body = r_tvc.apply([0.0, 0.0, thrust_mag])
+        r_body_to_world = R.from_quat(quat)
+        thrust_force_global = r_body_to_world.apply(thrust_force_body)
+
 
         # Drag
-        # drag_force = self.aerodynamics.getDragForce(vel_m_s=v_air, rho=rho, cross_area=self.structure.xyPlaneArea,
-        #                                             pos=pos, aoa=aoa, beta=beta)
+
         drag_force = self.aerodynamics.getDragForce(vel=v_air_body)
-        # print(drag_force)
-        # drag_force = 0
-        # -- SUMS -- #
-        # Sum of forces -- must be a vector
-        # force = (thrust_force_global
-        #         + drag_force
-        #         + (gravity * mass)
-        #         + (coriolis_acc * mass)
-        #         )
+
 
         # Dynamic Pressure
         q = self.air.getDynamicPressure(velocity_mps=vel)
 
+        # print(f"[TVC] θx = {np.rad2deg(theta_x):.2f}°, θy = {np.rad2deg(theta_y):.2f}°")
+        # print(f"[TVC] Torque = {torque_body}")
+        # print(f"[TVC] domega = {domega}")
 
-        # q = np.eye(3) * 1
-        # r = np.eye(3) * 0.1
-        # lqr = LQR(q=q, r=r)
-        # quat_obj = QuaternionFinder(lqr=lqr)
-        # theta = TVCStructure(quaternion=quat_obj, structure_model=self.structure)
-        # theta.update_variables_(thrust=thrust_mag)
-        # t_x, t_y = theta._calculate_theta(dt=dt, rocket_quat=quat, rocket_location=pos)
-        # print(f"X: {t_x}   Y:{t_y}")
-        return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass), rho, q, stat_pres
+        return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass), rho, q, stat_pres, domega
 
     def _initialize_vehicle(self):
         """A function to immediately display vehicle information on launch/initialization"""

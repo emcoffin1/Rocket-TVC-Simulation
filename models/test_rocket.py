@@ -1,8 +1,10 @@
 import numpy as np
 import VehicleModels
-import EnvironmentalModels
 import matplotlib.pyplot as plt
-
+from scipy.interpolate import interp1d
+import pandas as pd
+import os
+from scipy.spatial.transform import Rotation as R
 
 def print_results(time, pos, vel, q, rocket):
 
@@ -11,6 +13,7 @@ def print_results(time, pos, vel, q, rocket):
 
     # Burntime
     max_th_i = np.argmax(rocket.thrust)
+    print(rocket.burntime)
     print(f"Burn Time:      {rocket.burntime:.2f}s")
     print(f"Average Thrust: {np.average(rocket.thrust):.2f}N")
     print(f"Max Thrust:     {np.max(rocket.thrust):.2f}N at Time: {time[max_th_i]:.2f}s")
@@ -68,16 +71,16 @@ if __name__ == "__main__":
 
     for _ in range(steps):
         # Unpack state
-        a, b, c, d, rho, q, _ = rocket.getTotalForce(state, dt, side_effect=False)
+        a, b, c, d, rho, q, _, _ = rocket.getTotalForce(state, dt, side_effect=False)
         pos, vel, quat, omega, mass, time, aoa, beta = VehicleModels.unpackStates(state)
         # print(time, ", ", a[2])
-        thrust_log.append(b)
+        thrust_log.append(np.linalg.norm(b))
         drag_log.append(b)
         dynamicpress_log.append(np.linalg.norm(q))
         # Log data
         time_log.append(time)
         pos_log.append(pos)
-        vel_log.append(vel)
+        vel_log.append(np.linalg.norm(vel))
         quat_log.append(quat)
         aoa_log.append(aoa)
         beta_log.append(beta)
@@ -85,6 +88,7 @@ if __name__ == "__main__":
         density_log.append(rho)
 
         if pos[2] < 0 and time > 5:
+            print("ROCKET IMPACT")
             break
 
         # RK4 integration
@@ -102,7 +106,7 @@ if __name__ == "__main__":
     density_log = np.array(density_log)
     # dynamicpress_log = np.array(dynamicpress_log)
 
-    print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
+    # print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
 
     # print("--- EXTRA LOG ---")
     # plt.subplot(3,1,1)
@@ -129,7 +133,7 @@ if __name__ == "__main__":
     plt.grid(True)
 
     plt.subplot(3,1,3)
-    plt.plot(time_log, pos_log[:,2])
+    plt.plot(time_log, pos_log)
     plt.grid(True)
 
 
@@ -154,3 +158,44 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
+
+
+    # Load once
+    PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+    filename = os.path.join(PROJECT_ROOT, "TVC/missile_profile.csv")
+    df = pd.read_csv(filename)
+
+    # Build interpolators
+    interp_x = interp1d(df['z'], df['x'], kind='linear', fill_value='extrapolate')
+    interp_y = interp1d(df['z'], df['y'], kind='linear', fill_value='extrapolate')
+
+    # Extract x, y, z
+    x_vals = pos_log[:, 0]
+    y_vals = pos_log[:, 1]
+    z_vals = pos_log[:, 2]
+
+    exp = []
+    for z in z_vals:
+        exp.append([interp_x(z), interp_y(z), z])
+    exp_log = np.array(exp)
+
+    # Extract x, y, z
+    x_exp = exp_log[:, 0]
+    y_exp = exp_log[:, 1]
+    z_exp = exp_log[:, 2]
+
+    # Plotting
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot(x_vals, y_vals, z_vals, label='Trajectory Path')
+    ax.plot(x_exp, y_exp, z_exp, label="Expected Path")
+
+    ax.set_xlabel('X [m]')
+    ax.set_ylabel('Y [m]')
+    ax.set_zlabel('Z (Altitude) [m]')
+    ax.set_title('3D Trajectory from np.array')
+    ax.legend()
+    ax.grid(True)
+
+    plt.tight_layout()
+    plt.show()
