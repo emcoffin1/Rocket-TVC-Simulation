@@ -65,7 +65,7 @@ class Rocket:
     def __init__(self):
 
         q = np.eye(3) * 5
-        r = np.eye(3) * 10
+        r = np.eye(3) * 1
         # q = np.eye(3) * 1.0
         # r = np.eye(3) * 100.0
 
@@ -191,14 +191,17 @@ class Rocket:
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
         self.tvc.update_variables_(thrust_mag)
         # Pitch (around x) Yaw (around y)
-        theta_x, theta_y = self.tvc.calculate_theta(dt=dt, rocket_location=pos, rocket_quat=quat)
+        theta_x, theta_y, w = self.tvc.calculate_theta(dt=dt, rocket_location=pos, rocket_quat=quat)
 
-
-
+        # if side_effect:
+        #     print(f"{time:.2f}, {pos[2]:.3f}, {np.rad2deg(theta_x):.2f}, {np.rad2deg(theta_y):.2f}")
 
         limit = np.deg2rad(25)
         theta_x = np.clip(theta_x, -limit, limit)
         theta_y = np.clip(theta_y, -limit, limit)
+
+        # theta_y = 0
+        # print(w, theta_x, theta_y)
 
         L = self.structure.length
         torque_body = np.array([
@@ -211,10 +214,14 @@ class Rocket:
         domega = np.clip(domega, -100.0, 100.0)
         # domega = np.zeros(3)
 
-        r_tvc = R.from_euler('xy', [-theta_x, -theta_y])
+        # r_tvc = R.from_euler('yx', [-theta_y, -theta_x])
+        r_x = R.from_euler('x', -theta_x)
+        r_y = R.from_euler('y', -theta_y)
+        r_tvc = r_x * r_y  # Apply X rotation, then Y rotation
 
         if thrust_mag == 0 and not self.burntime:
             self.burntime = time
+            # exit()
         if side_effect and thrust_mag != 0:
             self.thrust.append(thrust_mag)
 
@@ -225,6 +232,9 @@ class Rocket:
         r_body_to_world = R.from_quat(quat)
         thrust_force_global = r_body_to_world.apply(thrust_force_body)
 
+        # if side_effect:
+        #     # print(round(time,2), thrust_mag, np.round(w,2),np.round(np.rad2deg(theta_x),2),np.round(np.rad2deg(theta_y),2))
+        #     print(round(time,2), thrust_mag, np.round(w,2),np.round((theta_x),2),np.round((theta_y),2))
 
         # Drag
 
@@ -248,74 +258,6 @@ class Rocket:
         # print(f"Initial Fluid Mass:     {self.structure.liquidMass} [kg]")
         print(f"Initial Fluid Mass:     {self.structure.fluid_mass} [kg]")
         print("=" * 60)
-
-
-class RocketStructure:
-    def __init__(self, engine: Engine):
-        self.engine = engine
-
-        self.length = 5.4864    # m -- 18 ft
-        self.diameter = 0.254   # m -- 10 in
-        self.zxPlaneArea = self.length * self.diameter
-        self.xyPlaneArea = math.pi / 4 * self.diameter**2
-
-        # Wet mass was determined using a fuel to total weight ratio of
-        # 0.56425, that is fuel_mass / 0.56425 = wet_mass
-        # Value was obtained from original spreadsheet by John
-        self.dryMass = 65.0379   # kg
-        self.liquidMass = self.engine.getFluidMass()
-        self.wetMass = self.dryMass + self.liquidMass
-
-        self.current_mass = self.wetMass
-
-
-        self.momInertiaYPInitial = 328.69285873  # kg*m2 -- 7800 lb*ft2
-        self.momInertiaYPFinal = 206.48653946    # kg*m2 -- 7800 lb*ft2
-
-        self.cgInitial = 0.28448    # m -- 11.2 ft
-        self.cgFinal = 0.29718      # m -- 11.7 ft
-
-    def getMassChange(self):
-        """
-        Gives mass change as a function of dry mass and remaining fluid mass.
-        :return: mass change
-        """
-        if self.engine.combustion_chamber.active:
-            # Get mass after engine update
-            val = self.dryMass + self.engine.getFluidMass()
-            # Subtract current mass from new mass
-            dm = self.current_mass - val
-            # Set new mass as current mass
-            self.current_mass = val
-            return dm
-        else:
-            # No method to change mass, dm = 0
-            return 0
-
-    def getCurrentCM(self):
-        """
-        Gives current center of mass approximation as it changes over flight
-        Assumed to be uniform shift and is therefor extracted linearly
-        :return:
-        """
-        if self.engine.combustion_chamber.active:
-            val = (self.cgInitial + ((self.current_mass - self.wetMass) / (self.dryMass - self.wetMass)) *
-                   (self.cgFinal - self.cgInitial))
-            return val
-
-        return self.cgFinal
-
-    def getCurrentPYInertia(self):
-        """
-        Gives current moment of inertia of pitch/yaw axis as it changes over flight
-        :return:
-        """
-        if self.engine.combustion_chamber.active:
-            return (self.momInertiaYPInitial + ((self.current_mass - self.wetMass) / (self.dryMass - self.wetMass))
-                    * (self.momInertiaYPFinal - self.momInertiaYPInitial))
-        return self.momInertiaYPFinal
-
-
 
 
 
@@ -411,10 +353,3 @@ class RocketAerodynamics:
         drag = drag_magnitude * drag_direction
         return drag
 
-
-
-class RocketTVC:
-    def __init__(self):
-        self.maxAngle = 0
-        self.maxVectorSpeed = 0
-        pass

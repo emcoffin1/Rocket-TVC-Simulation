@@ -9,8 +9,9 @@ import os
 class LQR:
     def __init__(self, q: np.ndarray = None, r: np.ndarray = None):
         self.q = q if q is not None else np.eye(3)
-        self.r = r if q is not None else np.eye(3)
+        self.r = r if r is not None else np.eye(3)
         self.k = self._compute_gain()
+
 
     def _compute_gain(self):
         """Computes gain for the LQR"""
@@ -35,8 +36,10 @@ class QuaternionFinder:
     def __init__(self, lqr:object = None):
         self.earth_frame = np.array([0, 0.0, 0.0, 0.0])
         self.LQR = lqr if lqr is not None else LQR()
+        self.error = []
 
         self._load_lookup_table()
+
 
     def getAngularVelocityCorrection(self, rocket_loc: np.array, rocket_quat: np.array):
         """
@@ -58,7 +61,7 @@ class QuaternionFinder:
         if np.linalg.norm(l_e) == 0:
             q_trans_e = np.array([0,0,0,1])
         else:
-            l_e = l_e / np.linalg.norm(l_e)         # Normalized error displacement
+            # l_e = l_e / np.linalg.norm(l_e)         # Normalized error displacement (BREAKS MATH)
 
             target_v_body = np.array([0, 0, 1])   # Nose up z axis
             c_v = np.linalg.cross(target_v_body, l_e)    # correction vector should be based on the quaternion correction
@@ -66,17 +69,23 @@ class QuaternionFinder:
             s = np.sqrt((1 + c) * 2)
             q_trans_e = np.array([c_v[0]/s, c_v[1]/s, c_v[2]/s, s/2])
             q_trans_e = q_trans_e / np.linalg.norm(q_trans_e)
+            # print(np.round(rocket_loc, 2), np.round(l_t, 2), np.round(l_e, 2))
+            # print(f"NOT CLIPPED: {np.round(q_trans_e,2)}")
+            if np.isclose(c, -1.0):
+                q_trans_e = np.array([1, 0, 0, 0])  # 180 deg flip around x
+
 
         q_e_combined = self._quat_mult(q_trans_e, q_e)     # Multiply to first apply the translation and then the attitude
-
         qdot = self.LQR.get_Qdot(q_e=q_e_combined)
-
+        # print(f"trans: {np.round(q_trans_e,2)}, qe: {np.round(q_e, 2)},combiend: {np.round(q_e_combined,2)}, rocket_at: {rocket_quat}")
+        # print(f"ERROR: {np.round(l_e,2)}")
         q_corr_i = self._quat_conj(q=q_e_combined)
 
         omega_quat = self._quat_mult(qdot, q_corr_i)
+        # print(round(alt_m,2),np.round(q_trans_e, 2), np.round(q_e_combined,2))
         w = 2 * omega_quat[:3]
-        # print(f"[LQR] q_error norm = {np.linalg.norm(q_e_combined[:3]):.3f}")
-
+        # print(f"Trans error: {np.round(l_e,2)} || Quat Error: {np.round(q_e,2)} || omega: {np.round(w,2)} || qdot: {np.round(qdot,2)}")
+        # print(f"CLIPPED: {np.round(q_trans_e, 2)}, ERROR: {np.round(l_e,2)}, OMEGA: {np.round(w,2)}, QDOT: {np.round(qdot,2)}")
         return w
 
     def _find_translational_error(self, trajectory: np.array, rocket: np.array):
@@ -88,6 +97,7 @@ class QuaternionFinder:
         """
 
     def _find_quaternion_error(self, trajectory: np.ndarray, rocket: np.ndarray):
+
         rocket_i = self._quat_conj(rocket)
         q_e = self._quat_mult(trajectory, rocket_i)
         q_e = q_e / np.linalg.norm(q_e)
@@ -133,14 +143,9 @@ class QuaternionFinder:
         ])
 
 
-        # LOOK UP METHOD
-        # import pandas as pd
-        # import numpy as np
-        #
-        # # Load table
-
     def _get_pose_by_altitude(self, alt: float):
         try:
+            p = 1/0
             pos = np.array([
                 self.interp_x(alt),
                 self.interp_y(alt),
@@ -154,7 +159,7 @@ class QuaternionFinder:
             ])
             return pos, quat
         except Exception as e:
-            print(f"QuaternionFinder lookup error: {e}")
+            # print(f"QuaternionFinder lookup error: {e}")
             return np.array([0, 0, alt]), np.array([0, 0, 0, 1])
 
     def _load_lookup_table(self):
@@ -163,12 +168,12 @@ class QuaternionFinder:
             filename = os.path.join(PROJECT_ROOT, "missile_profile.csv")
             df = pd.read_csv(filename)
             # Build interpolators
-            self.interp_x = interp1d(df['z'], df['x'], kind='linear', bounds_error=False, fill_value='extrapolate')
-            self.interp_y = interp1d(df['z'], df['y'], kind='linear', bounds_error=False, fill_value='extrapolate')
-            self.interp_qx = interp1d(df['z'], df['qx'], kind='linear', bounds_error=False, fill_value='extrapolate')
-            self.interp_qy = interp1d(df['z'], df['qy'], kind='linear', bounds_error=False, fill_value='extrapolate')
-            self.interp_qz = interp1d(df['z'], df['qz'], kind='linear', bounds_error=False, fill_value='extrapolate')
-            self.interp_qw = interp1d(df['z'], df['qw'], kind='linear', bounds_error=False, fill_value='extrapolate')
+            self.interp_x = interp1d(df['z'], df['x'], kind='cubic', bounds_error=False, fill_value='extrapolate')
+            self.interp_y = interp1d(df['z'], df['y'], kind='cubic', bounds_error=False, fill_value='extrapolate')
+            self.interp_qx = interp1d(df['z'], df['qx'], kind='cubic', bounds_error=False, fill_value='extrapolate')
+            self.interp_qy = interp1d(df['z'], df['qy'], kind='cubic', bounds_error=False, fill_value='extrapolate')
+            self.interp_qz = interp1d(df['z'], df['qz'], kind='cubic', bounds_error=False, fill_value='extrapolate')
+            self.interp_qw = interp1d(df['z'], df['qw'], kind='cubic', bounds_error=False, fill_value='extrapolate')
         except Exception as e:
             print(f"ERROR:      {e}")
             print(f"LOCATION:   QuaternionFinder._load_lookup_table()")

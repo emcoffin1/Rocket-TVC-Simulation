@@ -23,7 +23,7 @@ class TVCStructure:
         # Angular velocity determine by quaternion error and lqr calculated qdot
 
         if self.thrust == 0:
-            return 0, 0
+            return 0, 0, np.zeros(3)
 
         w = self.quaternion.getAngularVelocityCorrection(rocket_loc=rocket_location, rocket_quat=rocket_quat)
         # Rotation about the x-axis
@@ -36,11 +36,7 @@ class TVCStructure:
         theta_y = round(theta_y, 2)
         theta_x = round(theta_x, 2)
 
-        w_cmd = self.quaternion.getAngularVelocityCorrection(rocket_location, rocket_quat)
-        # print(f"[LQR] commanded ω = {w_cmd}  |  |ω| = {np.linalg.norm(w_cmd):.3f}")
-        # print(f"[TVC raw angles] θx_raw = {theta_x:.3f}, θy_raw = {theta_y:.3f}")
-
-        return theta_x, theta_y
+        return theta_x, theta_y, w
 
     def update_variables_(self, thrust: float):
         """

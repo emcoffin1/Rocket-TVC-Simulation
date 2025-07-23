@@ -52,7 +52,7 @@ if __name__ == "__main__":
     rocket = VehicleModels.Rocket()
     state = rocket.state.copy()
 
-    dt = 0.05  # timestep in seconds
+    dt = 0.01  # timestep in seconds
     t_final = 6000.0
     steps = int(t_final / dt)
 
