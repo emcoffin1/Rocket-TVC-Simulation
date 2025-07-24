@@ -52,6 +52,7 @@ class QuaternionFinder:
         # Get Target Paths
         alt_m = rocket_loc[2]
         l_t, q_t = self._get_pose_by_altitude(alt=alt_m)
+        q_t = self._safe_normalize(q=q_t)
 
         # Attitude Correction Quaternion
         q_e = self._find_quaternion_error(trajectory=q_t, rocket=rocket_quat)
@@ -63,11 +64,11 @@ class QuaternionFinder:
         else:
 
             target_v_body = np.array([0, 0, 1])   # Nose up z axis
-            c_v = np.linalg.cross(target_v_body, l_e)    # correction vector should be based on the quaternion correction
+            c_v = np.cross(target_v_body, l_e)    # correction vector should be based on the quaternion correction
             c = np.dot(target_v_body, l_e)
             s = np.sqrt((1 + c) * 2)
             q_trans_e = np.array([c_v[0]/s, c_v[1]/s, c_v[2]/s, s/2])
-            q_trans_e = q_trans_e / np.linalg.norm(q_trans_e)
+            q_trans_e = self._safe_normalize(q=q_trans_e)
             if np.isclose(c, -1.0):
                 q_trans_e = np.array([1, 0, 0, 0])  # 180 deg flip around x
 
@@ -92,7 +93,7 @@ class QuaternionFinder:
 
         rocket_i = self._quat_conj(rocket)
         q_e = self._quat_mult(trajectory, rocket_i)
-        q_e = q_e / np.linalg.norm(q_e)
+        q_e = self._safe_normalize(q=q_e)
         return q_e
 
 
@@ -170,14 +171,62 @@ class QuaternionFinder:
             print(f"ERROR:      {e}")
             print(f"LOCATION:   QuaternionFinder._load_lookup_table()")
 
+    def _safe_normalize(self, q, eps = 1e-6):
+        """Safely normalizes quaternion"""
+        norm = np.linalg.norm(q)
+        if norm < eps:
+            return q
+        return q / norm
 
 if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    from scipy.spatial.transform import Rotation as R
     q = np.eye(3) * 5
     r = np.eye(3) * 1
     traj = np.array([0, 0, 0, 1])
     att = np.array([1,4,0,1])
     loc = np.array([0, 0, 1])
 
+    thrust = 5000
+    p_y_inertia = 156.4
+    vehicle_height = 5.0
+    dt = 0.01
+    quat_tol = 1e-2
+    max_iters = 500
+
     quat = QuaternionFinder(lqr=LQR(q=q, r=r))
 
-    print(quat.getAngularVelocityCorrection(rocket_loc=loc, rocket_quat=att))
+    for step in range(max_iters):
+        att = att / np.linalg.norm(att)
+        w = quat.getAngularVelocityCorrection(rocket_loc=loc, rocket_quat=att)
+
+        theta_1 = p_y_inertia / (thrust * vehicle_height)
+        theta_x = theta_1 * w[0] / dt
+
+        # Rotation about the y-axis
+        theta_y = theta_1 * w[1] / dt
+
+
+        omega_vec = np.array([-theta_x, -theta_y, 0.0])
+        rotation_increment = R.from_rotvec(omega_vec)
+
+        current_rot = R.from_quat(att)
+        new_rot = rotation_increment * current_rot
+        att = new_rot.as_quat()
+
+        # Debug print
+        print(f"[{step}] q: {np.round(att, 4)} | ω: {np.round(w, 3)}")
+
+        # Check if we've aligned
+        angle_error = np.linalg.norm(att - traj)
+        if angle_error < quat_tol:
+            print(f"\n✅ Aligned in {step} steps.")
+            break
+    else:
+        print("\n❌ Did not converge.")
+
+    # print(f"Attitude: {att / np.linalg.norm(att)}")
+    # print(f"Trajectory: {traj / np.linalg.norm(traj)}")
+    # print(f"w correction: {w}, x(rad): {theta_x}, y(rad): {theta_y}")
+
+

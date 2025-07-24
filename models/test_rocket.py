@@ -129,7 +129,7 @@ if __name__ == "__main__":
     plt.grid(True)
 
     plt.subplot(3,1,2)
-    plt.plot(time_log, thrust_log)
+    plt.plot(time_log, quat_log)
     plt.grid(True)
 
     plt.subplot(3,1,3)

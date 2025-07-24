@@ -172,7 +172,7 @@ class Rocket:
             self.reynolds.append(reynolds)
             self.viscosity.append(viscosity)
             self.velocity.append(np.linalg.norm(vel))
-            print(round(time,2), np.round(quat,2))
+            # print(round(time,2), np.round(quat,2))
 
         # -- Velocity -- #
         v_air = vel - self.wind.getWindVelocity(alt_m=pos[2])
@@ -189,6 +189,7 @@ class Rocket:
         # -- Forces -- #
         # Thrust
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
+        print(thrust_mag)
         self.tvc.update_variables_(thrust_mag)
         # Pitch (around x) Yaw (around y)
         theta_x, theta_y, w = self.tvc.calculate_theta(dt=dt, rocket_location=pos, rocket_quat=quat)
@@ -205,14 +206,14 @@ class Rocket:
 
         L = self.structure.length
         torque_body = np.array([
-            L * thrust_mag * np.sin(theta_y),
-            -L * thrust_mag * np.sin(theta_x),
+            L * thrust_mag * np.sin(-theta_x),
+            L * thrust_mag * np.sin(-theta_y),
             0.0
         ])
 
         domega = torque_body / self.structure.I
         domega = np.clip(domega, -100.0, 100.0)
-        domega = np.zeros(3)
+        # domega = np.zeros(3)
 
         # r_tvc = R.from_euler('yx', [-theta_y, -theta_x])
         r_x = R.from_euler('x', -theta_x)
