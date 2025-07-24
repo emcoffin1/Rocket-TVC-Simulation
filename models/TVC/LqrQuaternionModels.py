@@ -41,7 +41,7 @@ class QuaternionFinder:
         self._load_lookup_table()
 
 
-    def getAngularVelocityCorrection(self, rocket_loc: np.array, rocket_quat: np.array):
+    def getAngularVelocityCorrection(self, rocket_loc: np.array, rocket_quat: np.array, side_effect=True):
         """
         Computes and returns the angular velocity correction to maintain trajectory
         w = 2 * q^-1 * qdot
@@ -74,11 +74,20 @@ class QuaternionFinder:
 
 
         q_e_combined = self._quat_mult(q_trans_e, q_e)     # Multiply to first apply the translation and then the attitude
+        q_e_combined = self._safe_normalize(q=q_e_combined)
         qdot = self.LQR.get_Qdot(q_e=q_e_combined)
         q_corr_i = self._quat_conj(q=q_e_combined)
 
         omega_quat = self._quat_mult(qdot, q_corr_i)
+        # omega_quat = self._safe_normalize(q=omega_quat)
         w = 2 * omega_quat[:3]
+
+        # if side_effect:
+        #     angle_rad = 2 * np.arccos(np.clip(q_e[3], -1.0, 1.0))  # q_e[3] is the scalar part
+        #     angle_deg = np.degrees(angle_rad)
+        #     print(f"Angle deviation: {angle_deg:.2f}°")
+
+
         return w
 
     def _find_translational_error(self, trajectory: np.array, rocket: np.array):
@@ -181,31 +190,38 @@ class QuaternionFinder:
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from scipy.spatial.transform import Rotation as R
-    q = np.eye(3) * 5
+
+    # --- Simulation Setup ---
+    q = np.eye(3) * 1
     r = np.eye(3) * 1
     traj = np.array([0, 0, 0, 1])
-    att = np.array([1,4,0,1])
+    att = np.array([1, 4, 0, 1])
     loc = np.array([0, 0, 1])
+
+    print(f"TARGET TRAJECTORY: {traj }")
 
     thrust = 5000
     p_y_inertia = 156.4
     vehicle_height = 5.0
     dt = 0.01
-    quat_tol = 1e-2
+    quat_tol = 1e-3
     max_iters = 500
 
     quat = QuaternionFinder(lqr=LQR(q=q, r=r))
 
+    # --- Data Logging ---
+    quaternions = []
+    angular_vels = []
+    errors = []
+
+    # --- Main Loop ---
     for step in range(max_iters):
         att = att / np.linalg.norm(att)
         w = quat.getAngularVelocityCorrection(rocket_loc=loc, rocket_quat=att)
 
         theta_1 = p_y_inertia / (thrust * vehicle_height)
         theta_x = theta_1 * w[0] / dt
-
-        # Rotation about the y-axis
         theta_y = theta_1 * w[1] / dt
-
 
         omega_vec = np.array([-theta_x, -theta_y, 0.0])
         rotation_increment = R.from_rotvec(omega_vec)
@@ -214,19 +230,45 @@ if __name__ == "__main__":
         new_rot = rotation_increment * current_rot
         att = new_rot.as_quat()
 
+        # Log data
+        quaternions.append(att.copy())
+        angular_vels.append(np.linalg.norm(w))
+        errors.append(np.linalg.norm(att - traj))
+
         # Debug print
         print(f"[{step}] q: {np.round(att, 4)} | ω: {np.round(w, 3)}")
 
-        # Check if we've aligned
-        angle_error = np.linalg.norm(att - traj)
-        if angle_error < quat_tol:
+        if errors[-1] < quat_tol:
             print(f"\n✅ Aligned in {step} steps.")
             break
     else:
         print("\n❌ Did not converge.")
 
-    # print(f"Attitude: {att / np.linalg.norm(att)}")
-    # print(f"Trajectory: {traj / np.linalg.norm(traj)}")
-    # print(f"w correction: {w}, x(rad): {theta_x}, y(rad): {theta_y}")
+    # --- Plotting ---
+    quaternions = np.array(quaternions)
+    angular_vels = np.array(angular_vels)
+    errors = np.array(errors)
+
+    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+
+    axs[0].plot(quaternions[:, 0], label="x")
+    axs[0].plot(quaternions[:, 1], label="y")
+    axs[0].plot(quaternions[:, 2], label="z")
+    axs[0].plot(quaternions[:, 3], label="w")
+    axs[0].set_ylabel("Quaternion")
+    axs[0].legend()
+    axs[0].grid(True)
+
+    axs[1].plot(angular_vels, label="|ω|", color="darkorange")
+    axs[1].set_ylabel("Angular Velocity (rad/s)")
+    axs[1].grid(True)
+
+    axs[2].plot(errors, label="Quat Error", color="crimson")
+    axs[2].set_ylabel("Quaternion Error")
+    axs[2].set_xlabel("Iteration")
+    axs[2].grid(True)
+
+    plt.tight_layout()
+    plt.show()
 
 

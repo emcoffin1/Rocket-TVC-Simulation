@@ -64,7 +64,7 @@ def quaternionDerivative(quat, omega):
 class Rocket:
     def __init__(self):
 
-        q = np.eye(3) * 5
+        q = np.eye(3) * 1
         r = np.eye(3) * 1
         # q = np.eye(3) * 1.0
         # r = np.eye(3) * 100.0
@@ -189,15 +189,17 @@ class Rocket:
         # -- Forces -- #
         # Thrust
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
-        print(thrust_mag)
         self.tvc.update_variables_(thrust_mag)
         # Pitch (around x) Yaw (around y)
-        theta_x, theta_y, w = self.tvc.calculate_theta(dt=dt, rocket_location=pos, rocket_quat=quat)
 
-        # if side_effect:
-        #     print(f"{time:.2f}, {pos[2]:.3f}, {np.rad2deg(theta_x):.2f}, {np.rad2deg(theta_y):.2f}")
+        if self.engine.combustion_chamber.active:
+            theta_x, theta_y, w = self.tvc.calculate_theta(dt=dt, rocket_location=pos, rocket_quat=quat, side_effect=side_effect)
 
-        limit = np.deg2rad(25)
+        else:
+            theta_x, theta_y = 0, 0
+
+
+        limit = np.deg2rad(2.5)
         theta_x = np.clip(theta_x, -limit, limit)
         theta_y = np.clip(theta_y, -limit, limit)
 
@@ -210,9 +212,9 @@ class Rocket:
             L * thrust_mag * np.sin(-theta_y),
             0.0
         ])
+        # print(torque_body)
 
         domega = torque_body / self.structure.I
-        domega = np.clip(domega, -100.0, 100.0)
         # domega = np.zeros(3)
 
         # r_tvc = R.from_euler('yx', [-theta_y, -theta_x])
@@ -226,12 +228,12 @@ class Rocket:
         if side_effect and thrust_mag != 0:
             self.thrust.append(thrust_mag)
 
-
-
         # Thrust_force_body needs to be rotated depending on the TVC angle
         thrust_force_body = r_tvc.apply([0.0, 0.0, thrust_mag])
         r_body_to_world = R.from_quat(quat)
         thrust_force_global = r_body_to_world.apply(thrust_force_body)
+        # if side_effect:
+        #     print(theta_x, theta_y)
 
         # if side_effect:
         #     # print(round(time,2), thrust_mag, np.round(w,2),np.round(np.rad2deg(theta_x),2),np.round(np.rad2deg(theta_y),2))

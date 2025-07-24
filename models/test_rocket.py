@@ -87,6 +87,9 @@ if __name__ == "__main__":
         mass_log.append(mass)
         density_log.append(rho)
 
+        if not rocket.engine.combustion_chamber.active:
+            break
+
         if pos[2] < 0 and time > 5:
             print("ROCKET IMPACT")
             break
