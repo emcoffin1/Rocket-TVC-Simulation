@@ -28,10 +28,14 @@ class TVCStructure:
         w = self.quaternion.getAngularVelocityCorrection(rocket_loc=rocket_location, rocket_quat=rocket_quat, side_effect=side_effect)
         # Rotation about the x-axis
         theta_1 = self.p_y_inertia / (self.thrust * self.vehicle_height)
-        theta_x = theta_1 * w[0] / dt
+        # theta_x = theta_1 * w[0] / dt
+        #
+        # # Rotation about the y-axis
+        # theta_y = theta_1 * w[1] / dt
 
-        # Rotation about the y-axis
-        theta_y = theta_1 * w[1] / dt
+        gain = 0.5  # tweakable damping factor < 1
+        theta_x = gain * (self.p_y_inertia / (self.thrust * self.vehicle_height)) * (w[0] / dt)
+        theta_y = gain * (self.p_y_inertia / (self.thrust * self.vehicle_height)) * (w[1] / dt)
 
         # theta_y = round(theta_y, 2)
         # theta_x = round(theta_x, 2)

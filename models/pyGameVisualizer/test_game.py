@@ -1,84 +1,104 @@
+import os
+# Skip real audio hardware probing
+os.environ["SDL_AUDIODRIVER"] = "dummy"
+
 import pygame
 import numpy as np
+import math
 from scipy.spatial.transform import Rotation as R
 from models.TVC.LqrQuaternionModels import QuaternionFinder, LQR
 
-# --- Pygame Init ---
-pygame.init()
+# — Init only display & font —
+pygame.display.init()
+pygame.font.init()
+
+# — Pygame setup —
 WIDTH, HEIGHT = 800, 600
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-clock = pygame.time.Clock()
-font = pygame.font.SysFont(None, 25)
+screen  = pygame.display.set_mode((WIDTH, HEIGHT))
+clock   = pygame.time.Clock()
+font    = pygame.font.SysFont(None, 25)
+
+# — LQR Quaternion controller setup —
+q_mat = np.eye(3) * 0.1
+r_mat = np.eye(3) * 1.0
+ctl   = QuaternionFinder(lqr=LQR(q=q_mat, r=r_mat))
+
+# — Constant vehicle parameters —
+THRUST         = 5000.0    # N
+MASS           = 1000.0    # kg
+LEVER_DISTANCE =   3.0     # m from engine to CG
+INERTIA        = np.array([156.4, 156.4, 156.4])  # Ixx, Iyy, Izz
+GRAVITY        = np.array([0.0, 0.0, -9.81])      # m/s²
+
+# — Fixed reference for LQR target —
+ROCKET_LOC = np.array([0.0, 0.0, 1.0])
+
+# — Initial state: start tilted “out” about Y-axis —
+att = np.array([0.0, 4.0, 0.0, 1.0])  # quaternion [x, y, z, w]
+pos = np.zeros(3)                     # [x, y, z] in meters
+vel = np.zeros(3)                     # [vx, vy, vz] in m/s
+
+# — Visual scale: meters → pixels —
+SCALE = 50
+
 running = True
-
-# --- Simulation Setup ---
-q = np.eye(3) * 0.5
-r = np.eye(3) * 1
-traj = np.array([0, 0, 0, 1])
-att = np.array([0, 4, 0, 1])
-loc = np.array([0, 0, 1])
-
-thrust = 5000
-p_y_inertia = 156.4
-vehicle_height = 5.0
-dt = 0.01
-quat_tol = 1e-8
-quat = QuaternionFinder(lqr=LQR(q=q, r=r))
-
-rocket_pos = (WIDTH // 2, HEIGHT // 2)
-
 while running:
-    dt = clock.tick(60) / 1000  # fixed timestep
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
+    dt = clock.tick(60) / 1000.0  # seconds
+
+    # — Quit event —
+    for ev in pygame.event.get():
+        if ev.type == pygame.QUIT:
             running = False
 
-    # Normalize quaternion and compute angular velocity
+    # — Attitude correction (LQR → angular‑velocity command) —
     att = att / np.linalg.norm(att)
-    w = quat.getAngularVelocityCorrection(rocket_loc=loc, rocket_quat=att)
+    ω_cmd = ctl.getAngularVelocityCorrection(
+        rocket_loc=ROCKET_LOC,
+        rocket_quat=att
+    )  # returns [ωx, ωy, ωz] in rad/s
 
-    # Calculate pitch correction (theta_y)
-    theta_1 = p_y_inertia / (thrust * vehicle_height)
-    theta_y = theta_1 * w[1] / dt
-    theta_x = theta_1 * w[0] / dt  # yaw (around X)
+    # Compute small gimbal angles (rad)
+    θ_gain = INERTIA[1] / (THRUST * LEVER_DISTANCE)
+    θx = θ_gain * ω_cmd[0] / dt
+    θy = θ_gain * ω_cmd[1] / dt
 
-    # Build rotation about Y axis only
-    omega_vec = np.array([0.0, -theta_y, 0.0])
-    rotation_increment = R.from_rotvec(omega_vec)
+    # Build & apply combined small rotation about X & Y
+    rot_inc = R.from_rotvec(np.array([ θx, -θy, 0.0 ]))
+    R_curr  = R.from_quat(att)
+    R_new   = rot_inc * R_curr
+    att     = R_new.as_quat()
 
-    current_rot = R.from_quat(att)
-    new_rot = rotation_increment * current_rot
-    att = new_rot.as_quat()
+    # — Translational physics under thrust & gravity —
+    thrust_dir = R_new.apply([0.0, 1.0, 0.0])
+    accel      = (THRUST * thrust_dir) / MASS + GRAVITY
+    vel       += accel * dt
+    pos       += vel   * dt
 
-    # Extract pitch (rotation around Y-axis)
-    euler = R.from_quat(att).as_euler('xyz', degrees=True)
-    pitch = euler[1]  # Y-axis rotation
-    yaw = euler[0]
+    # — Map 3D pos → 2D screen (X→right drift; Z altitude shown in text) —
+    screen_x = (WIDTH  // 2) + pos[0] * SCALE
+    screen_y = (HEIGHT // 2)               # rocket stays vertically centered
 
-    # --- Drawing ---
+    # — Extract Euler for display —
+    roll, pitch, yaw = R_new.as_euler('xyz', degrees=True)
+
+    # — Drawing —
     screen.fill((20, 20, 30))
-    pygame.draw.line(screen, (200, 200, 200), (WIDTH // 2, HEIGHT), (WIDTH // 2, 0), 2)
+    # centerline
+    pygame.draw.line(screen, (200,200,200),
+                     (WIDTH//2, HEIGHT), (WIDTH//2, 0), 2)
 
-    # Rocket visualization
-    rocket_len = 100
-    pitch_rad = np.radians(pitch)
-    yaw_rad = np.radians(yaw)
-    x0 = rocket_pos[0]
-    y0 = rocket_pos[1]
-    x1 = x0 + rocket_len * np.sin(pitch_rad)
-    y1 = y0 - rocket_len * np.cos(pitch_rad)
-    pygame.draw.line(screen, (255, 255, 255), (x0, y0), (x1, y1), 8)
+    # Rocket “body” line pitched by pitch
+    pr    = math.radians(pitch)
+    x_end = screen_x + 100 * math.sin(pr)
+    y_end = screen_y - 100 * math.cos(pr)
+    pygame.draw.line(screen, (255,255,255),
+                     (screen_x, screen_y), (x_end, y_end), 8)
 
-    # Display pitch angle
-    pitch_text = font.render(f"Pitch: {pitch:.2f}°", True, (255, 255, 255))
-    yaw_text = font.render(f"Yaw:   {yaw:.2f}°", True, (255, 255, 255))
-    screen.blit(pitch_text, (10, 10))
-    screen.blit(yaw_text,   (10, 35))
+    # — Overlay text —
+    screen.blit(font.render(f"Pitch:    {pitch:.2f}°", True, (255,255,255)), (10, 10))
+    screen.blit(font.render(f"Yaw:      {yaw:.2f}°", True, (255,255,255)), (10, 35))
+    screen.blit(font.render(f"Altitude: {pos[2]:.2f} m", True, (255,255,255)), (10, 60))
 
     pygame.display.flip()
 
 pygame.quit()
-
-
-
-

@@ -88,6 +88,7 @@ if __name__ == "__main__":
         density_log.append(rho)
 
         if not rocket.engine.combustion_chamber.active:
+            print(f"ALT: {pos[2]}")
             break
 
         if pos[2] < 0 and time > 5:

@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy.linalg import solve_continuous_are
 from scipy.interpolate import interp1d
+from scipy.spatial.transform import Rotation as R
 import os
 
 class LQR:
@@ -49,57 +50,56 @@ class QuaternionFinder:
         :param rocket_quat: rocket quaternion [
         :return: angular velocity to correct quaternion error
         """
-        # Get Target Paths
         alt_m = rocket_loc[2]
+
+        # --- Get trajectory direction and attitude --- #
         l_t, q_t = self._get_pose_by_altitude(alt=alt_m)
         q_t = self._safe_normalize(q=q_t)
 
-        # Attitude Correction Quaternion
+        # Look slightly ahead to get trajectory *direction* (not just point)
+        future_l_t, _ = self._get_pose_by_altitude(alt=alt_m + 10)
+        l_e = self._safe_normalize(q=future_l_t - l_t)  # Forward path vector
+
+        # Debug output (optional)
+        if side_effect:
+            print(f"ROCKET: {rocket_loc} || TARGET: {l_t} || PATH DIR: {np.round(l_e, 2)}")
+
+        # --- Attitude Error Quaternion --- #
         q_e = self._find_quaternion_error(trajectory=q_t, rocket=rocket_quat)
 
-        # Translational Correction
-        l_e = l_t - rocket_loc
-        if np.linalg.norm(l_e) == 0:
-            q_trans_e = np.array([0,0,0,1])
+        # --- Translational Correction Quaternion --- #
+        target_v_body = np.array([0, 0, 1])  # Rocket nose direction in body frame
+        R_world_to_body = R.from_quat(rocket_quat).inv()
+        l_e_body = R_world_to_body.apply(l_e)  # Transform path direction to body frame
+
+        c_v = np.cross(target_v_body, l_e_body)
+        c = np.dot(target_v_body, l_e_body)
+
+        if np.isclose(c, -1.0):
+            q_trans_e = np.array([1, 0, 0, 0])  # 180° flip
         else:
-
-            target_v_body = np.array([0, 0, 1])   # Nose up z axis
-            c_v = np.cross(target_v_body, l_e)    # correction vector should be based on the quaternion correction
-            c = np.dot(target_v_body, l_e)
             s = np.sqrt((1 + c) * 2)
-            q_trans_e = np.array([c_v[0]/s, c_v[1]/s, c_v[2]/s, s/2])
+            q_trans_e = np.array([c_v[0] / s, c_v[1] / s, c_v[2] / s, s / 2])
             q_trans_e = self._safe_normalize(q=q_trans_e)
-            if np.isclose(c, -1.0):
-                q_trans_e = np.array([1, 0, 0, 0])  # 180 deg flip around x
 
-
-        q_e_combined = self._quat_mult(q_trans_e, q_e)     # Multiply to first apply the translation and then the attitude
+        # --- Combine Quaternion Errors --- #
+        # q_e_combined = self._quat_mult(q_trans_e, q_e)  # Apply translational first, then attitude
+        q_e_combined = self._quat_mult(q_e, q_trans_e)  # Apply translational first, then attitude
         q_e_combined = self._safe_normalize(q=q_e_combined)
+
+        # --- Compute Angular Velocity from Quaternion Error --- #
         qdot = self.LQR.get_Qdot(q_e=q_e_combined)
+        scale = np.clip(np.linalg.norm(l_t - rocket_loc) / 0.1, 0.0, 1.0)
+        qdot *= scale
+
         q_corr_i = self._quat_conj(q=q_e_combined)
-
         omega_quat = self._quat_mult(qdot, q_corr_i)
-        # omega_quat = self._safe_normalize(q=omega_quat)
         w = 2 * omega_quat[:3]
-
-        # if side_effect:
-        #     angle_rad = 2 * np.arccos(np.clip(q_e[3], -1.0, 1.0))  # q_e[3] is the scalar part
-        #     angle_deg = np.degrees(angle_rad)
-        #     print(f"Angle deviation: {angle_deg:.2f}°")
-
 
         return w
 
-    def _find_translational_error(self, trajectory: np.array, rocket: np.array):
-        """
-        Determines the translational error in trajectory vs current location
-        :param trajectory: trajectory location [x,y,z]
-        :param rocket: rocket location [x,y,z]
-        :return: translational error [x,y,z]
-        """
-
     def _find_quaternion_error(self, trajectory: np.ndarray, rocket: np.ndarray):
-
+        """Determines the quaternion error, performs safe normalize"""
         rocket_i = self._quat_conj(rocket)
         q_e = self._quat_mult(trajectory, rocket_i)
         q_e = self._safe_normalize(q=q_e)
@@ -147,7 +147,7 @@ class QuaternionFinder:
 
     def _get_pose_by_altitude(self, alt: float):
         try:
-            p = 1/0
+            # p = 1/0
             pos = np.array([
                 self.interp_x(alt),
                 self.interp_y(alt),
@@ -161,8 +161,10 @@ class QuaternionFinder:
             ])
             return pos, quat
         except Exception as e:
+            pos = np.array([0, 0, alt])
+            quat = np.array([0, 0, 0, 1])
             # print(f"QuaternionFinder lookup error: {e}")
-            return np.array([0, 0, alt]), np.array([0, 0, 0, 1])
+            return pos, quat
 
     def _load_lookup_table(self):
         try:
