@@ -40,7 +40,7 @@ while running:
 
     # Physics update
     state = rk4_step(rocket, state, dt)
-    pos, vel, quat, omega, mass, time, aoa, beta = unpackStates(state)
+    pos, vel, quat, omega, tvc, mass, time, aoa, beta, angles = unpackStates(state)
     force = rocket.thrust[-1]
     acc = force / mass
 
@@ -93,9 +93,9 @@ while running:
     screen.blit(y_surf, y_rect)
 
     # — Acceleration / Velocity text —
-    acc_surf = font.render(f"ACC: {acc:.2f} m/s²", True, (255,255,255))
+    # acc_surf = font.render(f"ACC: {acc:.2f} m/s²", True, (255,255,255))
     vel_surf = font.render(f"VEL: {np.linalg.norm(vel):.2f} m/s", True, (255,255,255))
-    screen.blit(acc_surf, (WIDTH * 0.8, y_mid + 10))
+    # screen.blit(acc_surf, (WIDTH * 0.8, y_mid + 10))
     screen.blit(vel_surf, (WIDTH * 0.8, y_mid - 10))
 
     # — Trajectory centerline —

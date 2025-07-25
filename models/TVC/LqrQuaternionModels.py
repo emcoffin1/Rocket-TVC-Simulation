@@ -38,100 +38,89 @@ class QuaternionFinder:
         self.earth_frame = np.array([0, 0.0, 0.0, 0.0])
         self.LQR = lqr if lqr is not None else LQR()
         self.error = []
+        self.omega_command = []
         self.iteration = 0
         self.drift = 2
-
+        self.prev_w_cmd = 0
+        self.prev_w_body = 0
 
         self._load_lookup_table()
 
-    def getAngularVelocityCorrection(self, rocket_loc: np.array, rocket_quat: np.array, side_effect=True):
+
+    def getAngularVelocityCorrection(self, time: float,
+                                     dt: float,
+                                     rocket_loc: np.ndarray,
+                                     rocket_quat: np.ndarray,
+                                     rocket_omega: np.ndarray,
+                                     side_effect: bool = True) -> np.ndarray:
         """
-        Computes angular velocity correction to align current rocket orientation with trajectory-aligned orientation
+        Computes angular velocity correction with PD damping and cross-track bias.
         """
         alt_m = rocket_loc[2]
 
-        # --- Get desired pose from trajectory ---
-        l_t, q_t = self._get_pose_by_altitude(alt=alt_m)
-        q_t = self._safe_normalize(q_t)
+        # ————————————————————————————————————————————————
+        # 1) Build blended direction exactly as before
+        pos_des, _ = self._get_pose_by_altitude(alt=alt_m)
+        pos_fut, _ = self._get_pose_by_altitude(alt=alt_m + 5)
 
-        # --- Attitude Error ---
+        dir_tan = pos_fut - pos_des
+        dir_tan /= np.linalg.norm(dir_tan)
+
+        e_xy = pos_des[:2] - rocket_loc[:2]
+        k_pos = 0.01  # up from 0.005—stronger pull
+        corr_xy = (k_pos * e_xy / np.linalg.norm(e_xy)) if np.linalg.norm(e_xy) > 1e-6 else np.zeros(2)
+
+        blended = dir_tan + np.array([corr_xy[0], corr_xy[1], 0.0])
+        blended /= np.linalg.norm(blended)
+
+        r_blend, _ = R.align_vectors(a=[blended], b=[[0, 0, 1]])
+        q_t = self._safe_normalize(r_blend.as_quat())
+
+        # ————————————————————————————————————————————————
+        # 2) Quaternion‐error
         q_r = self._safe_normalize(rocket_quat)
         q_e = self._quat_mult(self._quat_conj(q_r), q_t)
         q_e = self._safe_normalize(q_e)
 
-        if side_effect:
-            self.error.append(q_e)
-            print(f"Attitude Error Quaternion: {np.round(q_e, 3)}")
-
-        # --- Quaternion Derivative from LQR ---
+        # ————————————————————————————————————————————————
+        # 3) Proportional command (via LQR)
         qdot = self.LQR.get_Qdot(q_e=q_e)
-
-        # --- Angular Velocity Correction ---
         omega_quat = self._quat_mult(qdot, self._quat_conj(q_e))
-        w = 2 * omega_quat[:3]
+        w_p = 2.0 * omega_quat[:3]  # P‐term
 
-        return w
+        # ————————————————————————————————————————————————
+        # 4) Derivative (damping) term on measured body rates
+        Kd = 0.1  # tune this
+        w_d = -Kd * self.prev_w_body  # self.prev_w_body is rocket’s last ω from state
 
-    def _getAngularVelocityCorrection(self, rocket_loc: np.array, rocket_quat: np.array, side_effect=True):
-        """
-        Computes and returns the angular velocity correction to maintain trajectory
-        w = 2 * q^-1 * qdot
-        :param rocket_loc: rocket location
-        :param rocket_quat: rocket quaternion [
-        :return: angular velocity to correct quaternion error
-        """
-        alt_m = rocket_loc[2]
+        # Combine P + D
+        w_cmd = w_p + w_d
 
-        # --- Get trajectory direction and attitude --- #
-        l_t, q_t = self._get_pose_by_altitude(alt=alt_m, side_effect=side_effect)
-        q_t = self._safe_normalize(q=q_t)
+        # ————————————————————————————————————————————————
+        # 5) Saturate to max body‑rate
+        max_rate = np.deg2rad(2.5)
+        norm = np.linalg.norm(w_cmd)
+        if norm > max_rate:
+            w_cmd *= (max_rate / norm)
 
-        # Look slightly ahead to get trajectory *direction* (not just point)
-        future_l_t, _ = self._get_pose_by_altitude(alt=alt_m + 10, side_effect=side_effect)
-        # l_e = self._safe_normalize(q=future_l_t - l_t)  # Forward path vector
-        l_e = future_l_t - l_t
+        # ————————————————————————————————————————————————
+        # 6) Low‑pass filter on the command
+        alpha = dt / (0.05 + dt)  # 50 ms time constant
+        w_cmd = alpha * w_cmd + (1 - alpha) * self.prev_w_cmd
+        self.prev_w_cmd = w_cmd
 
-        # --- Attitude Error Quaternion --- #
-        q_e = self._find_quaternion_error(trajectory=q_t, rocket=rocket_quat)
-
-        # if side_effect:
-        #     print(f"ROCKET: {rocket_quat} || TARGET: {q_t} || PATH DIR: {np.round(q_e, 2)}")
-
-        # --- Translational Correction Quaternion --- #
-        target_v_body = np.array([0, 0, 1])  # Rocket nose direction in body frame
-        R_world_to_body = R.from_quat(rocket_quat).inv()
-        l_e_body = R_world_to_body.apply(l_e)  # Transform path direction to body frame
-
-        c_v = np.cross(target_v_body, l_e_body)
-        c = np.dot(target_v_body, l_e_body)
-
-        if np.isclose(c, -1.0):
-            q_trans_e = np.array([1, 0, 0, 0])  # 180° flip
-        else:
-            s = np.sqrt((1 + c) * 2)
-            q_trans_e = np.array([c_v[0] / s, c_v[1] / s, c_v[2] / s, s / 2])
-            q_trans_e = self._safe_normalize(q=q_trans_e)
-
-        # --- Combine Quaternion Errors --- #
-        # q_e_combined = self._quat_mult(q_e, q_trans_e)  # Apply translational first, then attitude
-        q_e_combined = q_trans_e
-        q_e_combined = self._safe_normalize(q=q_e_combined)
-
+        # ————————————————————————————————————————————————
+        # 7) Logging & state update
         if side_effect:
-            self.error.append(l_e)
+            angle_err = 2 * np.degrees(np.arccos(np.clip(q_e[3], -1, 1)))
+            self.error.append([angle_err, alt_m])
+            self.omega_command.append([time, w_cmd])
+            print(self.omega_command[-1])
 
-        print(np.round(q_e_combined, 3))
+        # store last body‐rate for D‐term next step
+        self.prev_w_body = rocket_omega  # pull from your state
 
-        # --- Compute Angular Velocity from Quaternion Error --- #
-        qdot = self.LQR.get_Qdot(q_e=q_e_combined)
-        scale = np.clip(np.linalg.norm(l_t - rocket_loc) / 0.1, 0.0, 1.0)
-        qdot *= scale
-
-        q_corr_i = self._quat_conj(q=q_e_combined)
-        omega_quat = self._quat_mult(qdot, q_corr_i)
-        w = 2 * omega_quat[:3]
-
-        return w
+        return w_cmd
 
     def _find_quaternion_error(self, trajectory: np.ndarray, rocket: np.ndarray):
         """Determines the quaternion error, performs safe normalize"""
@@ -166,8 +155,8 @@ class QuaternionFinder:
         ])
 
 
-    def _get_pose_by_altitude(self, alt: float, side_effect: False):
-        #
+    def _get_pose_by_altitude(self, alt: float):
+
         # pos = np.array([0, 0, alt])
         # x = np.sin(np.deg2rad(self.drift)/2)
         # w = np.cos(np.deg2rad(self.drift)/2)
@@ -203,7 +192,8 @@ class QuaternionFinder:
     def _load_lookup_table(self):
         try:
             PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-            filename = os.path.join(PROJECT_ROOT, "missile_profile.csv")
+            filename = os.path.join(PROJECT_ROOT, "cubic_sweep_profile.csv")
+
             df = pd.read_csv(filename)
             # Build interpolators
             self.interp_x = interp1d(df['z'], df['x'], kind='cubic', bounds_error=False, fill_value='extrapolate')
@@ -223,88 +213,31 @@ class QuaternionFinder:
             return q
         return q / norm
 
+    def get_path(self, alt):
+        return self._get_pose_by_altitude(alt=alt)
+
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    from scipy.spatial.transform import Rotation as R
+    q = QuaternionFinder(lqr=LQR())
+    h = 10000
+    pos = []
+    for i in range(h):
 
-    # --- Simulation Setup ---
-    q = np.eye(3) * 1
-    r = np.eye(3) * 1
-    traj = np.array([0, 0, 0, 1])
-    att = np.array([1, 4, 0, 1])
-    loc = np.array([0, 0, 1])
+        p, quat = q.get_path(alt=i)
+        pos.append(quat)
 
-    print(f"TARGET TRAJECTORY: {traj }")
 
-    thrust = 5000
-    p_y_inertia = 156.4
-    vehicle_height = 5.0
-    dt = 0.01
-    quat_tol = 1e-3
-    max_iters = 500
+    pos = np.array(pos)
 
-    quat = QuaternionFinder(lqr=LQR(q=q, r=r))
-
-    # --- Data Logging ---
-    quaternions = []
-    angular_vels = []
-    errors = []
-
-    # --- Main Loop ---
-    for step in range(max_iters):
-        att = att / np.linalg.norm(att)
-        w = quat.getAngularVelocityCorrection(rocket_loc=loc, rocket_quat=att)
-
-        theta_1 = p_y_inertia / (thrust * vehicle_height)
-        theta_x = theta_1 * w[0] / dt
-        theta_y = theta_1 * w[1] / dt
-
-        omega_vec = np.array([-theta_x, -theta_y, 0.0])
-        rotation_increment = R.from_rotvec(omega_vec)
-
-        current_rot = R.from_quat(att)
-        new_rot = rotation_increment * current_rot
-        att = new_rot.as_quat()
-
-        # Log data
-        quaternions.append(att.copy())
-        angular_vels.append(np.linalg.norm(w))
-        errors.append(np.linalg.norm(att - traj))
-
-        # Debug print
-        print(f"[{step}] q: {np.round(att, 4)} | ω: {np.round(w, 3)}")
-
-        if errors[-1] < quat_tol:
-            print(f"\n✅ Aligned in {step} steps.")
-            break
-    else:
-        print("\n❌ Did not converge.")
-
-    # --- Plotting ---
-    quaternions = np.array(quaternions)
-    angular_vels = np.array(angular_vels)
-    errors = np.array(errors)
-
-    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-
-    axs[0].plot(quaternions[:, 0], label="x")
-    axs[0].plot(quaternions[:, 1], label="y")
-    axs[0].plot(quaternions[:, 2], label="z")
-    axs[0].plot(quaternions[:, 3], label="w")
-    axs[0].set_ylabel("Quaternion")
-    axs[0].legend()
-    axs[0].grid(True)
-
-    axs[1].plot(angular_vels, label="|ω|", color="darkorange")
-    axs[1].set_ylabel("Angular Velocity (rad/s)")
-    axs[1].grid(True)
-
-    axs[2].plot(errors, label="Quat Error", color="crimson")
-    axs[2].set_ylabel("Quaternion Error")
-    axs[2].set_xlabel("Iteration")
-    axs[2].grid(True)
-
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot(pos[:,0], pos[:,1], pos[:,2], label='Missile Trajectory', linewidth=2)
+    ax.set_xlabel('X Position [m]')
+    ax.set_ylabel('Y Position [m]')
+    ax.set_zlabel('Altitude Z [m]')
+    ax.set_title('Missile Trajectory Path (3D)')
+    ax.legend()
+    ax.grid(True)
     plt.tight_layout()
     plt.show()
-
 

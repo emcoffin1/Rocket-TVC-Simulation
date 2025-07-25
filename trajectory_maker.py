@@ -3,53 +3,166 @@ import pandas as pd
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
-def generate_missile_lookup_table(filename='missile_profile.csv', num_points=100000):
-    # Altitude range (no duplicates)
-    z_vals = np.linspace(0, 100000, num_points)
+import numpy as np
+import pandas as pd
 
-    # Example 3D trajectory (sinusoidal arc)
-    x_vals = 1000 * np.sin(np.pi * z_vals / z_vals[-1])
-    y_vals = 300 * np.sin(2 * np.pi * z_vals / z_vals[-1])
+def generate_missile_lookup_table(
+    filename: str = 'missile_profile_.csv',
+    num_points: int = 100000,
+    max_altitude: float = 100000.0,
+    pitch_rate_deg_per_km: float = 35.0
+) -> pd.DataFrame:
+    """
+    Generate a vertical climb profile where the vehicle pitches by
+    `pitch_rate_deg_per_km` degrees every 1000 m of ascent.
 
-    # Force initial point to be exactly (0, 0, 0)
-    x_vals[0], y_vals[0], z_vals[0] = 0, 0, 0
+    Columns:
+      z   – altitude [m]
+      x,y – horizontal position (zero)
+      qx,qy,qz,qw – body‑to‑world quaternion (x, y, z, w)
+    """
+    # 1) Altitude grid
+    z_vals = np.linspace(0.0, max_altitude, num_points)
 
-    # Position vectors
-    positions = np.stack([x_vals, y_vals, z_vals], axis=1)
+    # 2) Horizontal positions (vertical climb)
+    x_vals = np.zeros_like(z_vals)
+    y_vals = np.zeros_like(z_vals)
 
-    # Direction vectors (velocity estimate)
-    vels = np.gradient(positions, axis=0)
-    vels /= np.linalg.norm(vels, axis=1, keepdims=True)
+    # 3) Compute pitch angle (in radians) at each altitude
+    pitch_deg = pitch_rate_deg_per_km * (z_vals / 1000.0)
+    pitch_rad = np.deg2rad(pitch_deg)
 
-    # Calculate orientation quaternion from forward velocity vector
-    quats = []
-    z_axis = np.array([0, 0, 1])
-    for vel in vels:
-        r, _ = R.align_vectors([vel], [z_axis])
-        q = r.as_quat()  # x, y, z, w
-        quats.append(q)
+    # 4) Build quaternions for rotation about local X‑axis
+    half = pitch_rad / 2.0
+    qx = np.sin(half)
+    qy = np.zeros_like(half)
+    qz = np.zeros_like(half)
+    qw = np.cos(half)
 
-    quats = np.array(quats)
-
-    # Build DataFrame
+    # 5) Assemble into a DataFrame
     df = pd.DataFrame({
-        'z': z_vals,
-        'x': x_vals,
-        'y': y_vals,
-        'qx': quats[:, 0],
-        'qy': quats[:, 1],
-        'qz': quats[:, 2],
-        'qw': quats[:, 3],
+        'z':   z_vals,
+        'x':   x_vals,
+        'y':   y_vals,
+        'qx':  qx,
+        'qy':  qy,
+        'qz':  qz,
+        'qw':  qw,
     })
 
-    # Save to CSV
+    # 6) Save and return
     df.to_csv(filename, index=False)
-    print(f"✅ Missile profile saved to '{filename}'")
-
+    print(f"✅ Slow‑pitch profile saved to '{filename}'")
     return df
 
+
+def generate_orbital_insertion_lookup_table(
+    filename: str = 'orbital_insertion_profile.csv',
+    num_points: int = 100000,
+    max_altitude: float = 100000.0,
+    sweep_altitude: float = 50000.0
+) -> pd.DataFrame:
+    """
+    Build a lookup table where:
+      • z (m) goes from 0 → max_altitude
+      • x, y remain zero (vertical climb path)
+      • orientation quaternion rotates about the Y‑axis from 0° → 90°
+        between z=0 and z=sweep_altitude, then holds at 90°.
+
+    Quaternion convention: (qx, qy, qz, qw), for a rotation φ about Y:
+      q = [ 0, sin(φ/2), 0, cos(φ/2) ]
+    """
+    # 1) Altitude grid
+    z = np.linspace(0.0, max_altitude, num_points)
+
+    # 2) Horizontal path (vertical ascent)
+    x = np.zeros_like(z)
+    y = np.zeros_like(z)
+
+    # 3) Compute sweep angle φ(z):
+    #    ramp linearly from 0 → π/2 over [0, sweep_altitude], then clamp
+    φ = np.clip((z / sweep_altitude) * (np.pi / 2), 0.0, np.pi / 2)
+
+    # 4) Quaternion components for rotation about Y‑axis by φ:
+    half = φ / 2.0
+    qx = np.zeros_like(half)
+    qy = np.sin(half)
+    qz = np.zeros_like(half)
+    qw = np.cos(half)
+
+    # 5) Assemble DataFrame
+    df = pd.DataFrame({
+        'z':   z,
+        'x':   x,
+        'y':   y,
+        'qx':  qx,
+        'qy':  qy,
+        'qz':  qz,
+        'qw':  qw,
+    })
+
+    # 6) Save to CSV and return
+    df.to_csv(filename, index=False)
+    print(f"✅ Orbital‑insertion profile saved to '{filename}'")
+    return df
+
+
+def generate_cubic_sweep_tangent_table(
+    filename: str = 'cubic_sweep_profile.csv',
+    num_points: int = 100_000,
+    max_altitude: float = 100_000.0,      # total climb
+    sweep_altitude: float = 75000.0,     # where horizontal range is reached
+    horizontal_range: float = 20_000.0    # X_max at z = sweep_altitude
+) -> pd.DataFrame:
+    """
+    Build a 3D climb with:
+      - z from 0 → max_altitude
+      - x(z) = horizontal_range*(z/sweep_altitude)^3 (clamped)
+      - y = 0
+
+    Then compute quaternions that align body‑z to the path tangent.
+    """
+    # 1) Altitude vector
+    z = np.linspace(0.0, max_altitude, num_points)
+
+    # 2) Cubic‑sweep x(z)
+    frac = np.clip(z / sweep_altitude, 0.0, 1.0)
+    x = horizontal_range * frac**3
+    y = np.zeros_like(z)
+
+    # 3) Stack positions and finite‑difference to get velocity vectors
+    pos = np.stack([x, y, z], axis=1)
+    vels = np.gradient(pos, axis=0)                # approximate dpos/dindex
+    tangents = vels / np.linalg.norm(vels, axis=1, keepdims=True)
+
+    # 4) Align each tangent to the world‑z axis ([0,0,1]) → quaternion
+    forward = np.array([0.0, 0.0, 1.0])
+    quats = []
+    for d in tangents:
+        # note: align_vectors(target_vectors, source_vectors)
+        r, _ = R.align_vectors([d], [forward])
+        quats.append(r.as_quat())  # x, y, z, w
+    quats = np.array(quats)
+
+    # 5) Build DataFrame
+    df = pd.DataFrame({
+        'z':   z,
+        'x':   x,
+        'y':   y,
+        'qx':  quats[:,0],
+        'qy':  quats[:,1],
+        'qz':  quats[:,2],
+        'qw':  quats[:,3],
+    })
+
+    # 6) Save & return
+    df.to_csv(filename, index=False)
+    print(f"✅ Cubic‑sweep tangent profile saved to '{filename}'")
+    return df
+
+
 # Generate table and preview trajectory
-df = generate_missile_lookup_table()
+df = generate_cubic_sweep_tangent_table()
 
 # Plot trajectory for visual check
 fig = plt.figure(figsize=(10, 7))
