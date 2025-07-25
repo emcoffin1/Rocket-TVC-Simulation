@@ -90,7 +90,10 @@ class Rocket:
         self.engine = Engine()
         self.structure = StructuralModel(engine_class=self.engine, liquid_total_ratio=0.56425)
         self.aerodynamics = Aerodynamics(self.air)
-        self.tvc = TVCStructure(lqr=self.lqr, structure_model=self.structure)
+        self.tvc = TVCStructure(
+            lqr_controller=self.lqr,
+            structure_model=self.structure,
+            aero_model=self.aerodynamics)
 
         # -- States -- #
         self.state = np.array([
@@ -105,49 +108,59 @@ class Rocket:
             0.0, 0.0,                            # Gimbal angles
         ])
 
-        # Logging
-        self.thrust = []                         # Thrust curve
-        self.burntime = None                     # Time burn stops
-        self.mach = []
-        self.velocity = []
-        self.reynolds = []
-        self.viscosity = []
-        self.mfr = []
-        self.pc = []
+        # -- Logging -- #
+        self.thrust     = []                     # Thrust curve
+        self.burntime   = None                   # Time burn stops
+        self.mach       = []                     # Mach list
+        self.velocity   = []                     # Velocity list
+        self.reynolds   = []                     # Reynolds list
+        self.viscosity  = []
+        self.mfr        = []
+        self.pc         = []
 
         # Init print function
         self._initialize_vehicle()
 
     def getDynamics(self, state, dt: float, side_effect: bool = True):
-        thrust, drag, gravity, coriolis, _, __, static_pres, domega = self.getTotalForce(state=state, dt=dt, side_effect=side_effect)
 
+        # Unpack current states
         pos, vel, quat, omega, tvc_quat, mass, time, aoa, beta, dtheta = unpackStates(state=state)
 
-        # Update altitude and time for atmospheric model IF side_effect is enabled
+        # ======================== #
+        # -- UPDATE ENVIRONMENT -- #
+        # ======================== #
+
         if side_effect:
-            #print(pos[2], time, force, mass)
             self.air.getCurrentAtmosphere(altitudes_m=pos[2], time=time)
             self.structure.updateProperties()
 
-        # ================== #
-        # -- ACCELERATION -- #
-        # ================== #
+        # ============ #
+        # -- FORCES -- #
+        # ============ #
 
-        # Summation of all forces
-        force = thrust + drag + gravity + coriolis
+        thrust, drag, gravity, coriolis, rho, q_dyn, stat_pres, domega = self.getTotalForce(state=state, dt=dt,
+                                                                                            side_effect=side_effect)
+        force_total = thrust + drag + gravity + coriolis
+
+        # ============================ #
+        # -- TRANSLATION KINEMATICS -- #
+        # ============================ #
 
         # Acceleration using a = F/m
-        acceleration = force / mass
+        acceleration = force_total / mass
+
+        # Position derivative = velocity
+        dpos = vel
+
+        # Velocity derivative = acceleration
+        dvel = acceleration
 
         # =========================== #
-        # -- Quaternion Derivative -- #
+        # -- QUATERNION KINEMATICS -- #
         # =========================== #
 
+        # Change in quaternion
         dqdt = quaternionDerivative(quat, omega)
-
-        # -- Angular Acceleration -- #
-        # handled directly in forces
-        # look for domega
 
         # ================= #
         # -- Mass Change -- #
@@ -253,12 +266,15 @@ class Rocket:
         self.tvc.update_variables_(thrust_mag)
 
         # Get updated gimbal orientation in body frame
-        gimbal_orient = self.tvc.compute_gimbal_orientation(time=time,
-                                                            dt=dt,
-                                                            rocket_location=pos,
-                                                            rocket_quat=quat,
-                                                            rocket_omega=omega,
-                                                            side_effect=side_effect)
+        gimbal_orient: R = self.tvc.compute_gimbal_orientation(
+            time= time,
+            dt=   dt,
+            rocket_pos=   pos,
+            rocket_quat=  quat,
+            rocket_vel=   vel,
+            rocket_acc=   self._compute_acceleration(),  # however you get accel
+            side_effect= side_effect
+        )
 
         # Apply gimbal rotation to thrust vector in body frame
         thrust_vector_body = gimbal_orient.apply([0.0, 0.0, thrust_mag])  # original thrust vector straight out
