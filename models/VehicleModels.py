@@ -147,9 +147,6 @@ class Rocket:
             [0.0]
         ])
 
-
-
-
         return dstate
 
     def getTotalForce(self, state, dt: float, side_effect: bool = True):
@@ -192,17 +189,14 @@ class Rocket:
         self.tvc.update_variables_(thrust_mag)
         # Pitch (around x) Yaw (around y)
 
-
         theta_x, theta_y, w = self.tvc.calculate_theta(dt=dt, rocket_location=pos, rocket_quat=quat, side_effect=side_effect)
 
         if not self.engine.combustion_chamber.active:
             theta_x, theta_y = 0, 0
 
-
         limit = np.deg2rad(2.5)
         theta_x = np.clip(theta_x, -limit, limit)
         theta_y = np.clip(theta_y, -limit, limit)
-
 
         L = self.structure.length
         torque_body = np.array([
@@ -214,25 +208,21 @@ class Rocket:
         domega = torque_body / self.structure.I
         # domega = np.zeros(3)
 
-        # r_tvc = R.from_euler('yx', [-theta_y, -theta_x])
-        # theta_x = 0
-        # theta_y = 0
-        r_x = R.from_euler('x', -theta_x)
-        r_y = R.from_euler('y', -theta_y)
-        r_tvc = r_x * r_y  # Apply X rotation, then Y rotation
-
+        # r_tvc = R.from_euler('xy', [-theta_x, -theta_y])
+        r_gimbal = R.from_rotvec([-theta_x, 0 ,0]) * R.from_rotvec([0, -theta_y, 0])
 
         if thrust_mag == 0 and not self.burntime:
             self.burntime = time
             # exit()
-        if side_effect and thrust_mag != 0:
-            self.thrust.append(thrust_mag)
 
         # Thrust_force_body needs to be rotated depending on the TVC angle
         thrust_force_body = r_tvc.apply([0.0, 0.0, thrust_mag])
         r_body_to_world = R.from_quat(quat)
         thrust_force_global = r_body_to_world.apply(thrust_force_body)
 
+
+        if side_effect and thrust_mag != 0:
+            self.thrust.append(thrust_force_global)
 
         # Drag
 

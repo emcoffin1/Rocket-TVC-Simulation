@@ -127,13 +127,33 @@ if __name__ == "__main__":
     # plt.plot(time_log[:-1], rocket.reynolds)
     # plt.xlabel("Reynolds")
     # plt.grid(True)
+    q_e = []
+    for x in rocket.tvc.quaternion.error:
+        # q_e.append([np.rad2deg(x[0]), np.rad2deg(x[1]), np.rad2deg(x[2])])
+        q_e.append([(x[0]), (x[1]), (x[2])])
+    q_e = np.array(q_e)
+
+
+    plt.subplot(3,1,1)
+    plt.plot(time_log[:-2],  q_e[:,0])
+    plt.grid(True)
+
+    plt.subplot(3,1,2)
+    plt.plot(time_log, pos_log[:,0])
+    plt.grid(True)
+
+    plt.subplot(3,1,3)
+    plt.plot(time_log, thrust_log)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
     plt.subplot(3,1,1)
     plt.plot(time_log, vel_log)
     plt.grid(True)
 
     plt.subplot(3,1,2)
-    plt.plot(time_log, quat_log)
+    plt.plot(time_log, quat_log[:,:2])
     plt.grid(True)
 
     plt.subplot(3,1,3)

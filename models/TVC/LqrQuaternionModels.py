@@ -38,11 +38,41 @@ class QuaternionFinder:
         self.earth_frame = np.array([0, 0.0, 0.0, 0.0])
         self.LQR = lqr if lqr is not None else LQR()
         self.error = []
+        self.iteration = 0
+        self.drift = 2
+
 
         self._load_lookup_table()
 
-
     def getAngularVelocityCorrection(self, rocket_loc: np.array, rocket_quat: np.array, side_effect=True):
+        """
+        Computes angular velocity correction to align current rocket orientation with trajectory-aligned orientation
+        """
+        alt_m = rocket_loc[2]
+
+        # --- Get desired pose from trajectory ---
+        l_t, q_t = self._get_pose_by_altitude(alt=alt_m)
+        q_t = self._safe_normalize(q_t)
+
+        # --- Attitude Error ---
+        q_r = self._safe_normalize(rocket_quat)
+        q_e = self._quat_mult(self._quat_conj(q_r), q_t)
+        q_e = self._safe_normalize(q_e)
+
+        if side_effect:
+            self.error.append(q_e)
+            print(f"Attitude Error Quaternion: {np.round(q_e, 3)}")
+
+        # --- Quaternion Derivative from LQR ---
+        qdot = self.LQR.get_Qdot(q_e=q_e)
+
+        # --- Angular Velocity Correction ---
+        omega_quat = self._quat_mult(qdot, self._quat_conj(q_e))
+        w = 2 * omega_quat[:3]
+
+        return w
+
+    def _getAngularVelocityCorrection(self, rocket_loc: np.array, rocket_quat: np.array, side_effect=True):
         """
         Computes and returns the angular velocity correction to maintain trajectory
         w = 2 * q^-1 * qdot
@@ -53,19 +83,19 @@ class QuaternionFinder:
         alt_m = rocket_loc[2]
 
         # --- Get trajectory direction and attitude --- #
-        l_t, q_t = self._get_pose_by_altitude(alt=alt_m)
+        l_t, q_t = self._get_pose_by_altitude(alt=alt_m, side_effect=side_effect)
         q_t = self._safe_normalize(q=q_t)
 
         # Look slightly ahead to get trajectory *direction* (not just point)
-        future_l_t, _ = self._get_pose_by_altitude(alt=alt_m + 10)
-        l_e = self._safe_normalize(q=future_l_t - l_t)  # Forward path vector
-
-        # Debug output (optional)
-        if side_effect:
-            print(f"ROCKET: {rocket_loc} || TARGET: {l_t} || PATH DIR: {np.round(l_e, 2)}")
+        future_l_t, _ = self._get_pose_by_altitude(alt=alt_m + 10, side_effect=side_effect)
+        # l_e = self._safe_normalize(q=future_l_t - l_t)  # Forward path vector
+        l_e = future_l_t - l_t
 
         # --- Attitude Error Quaternion --- #
         q_e = self._find_quaternion_error(trajectory=q_t, rocket=rocket_quat)
+
+        # if side_effect:
+        #     print(f"ROCKET: {rocket_quat} || TARGET: {q_t} || PATH DIR: {np.round(q_e, 2)}")
 
         # --- Translational Correction Quaternion --- #
         target_v_body = np.array([0, 0, 1])  # Rocket nose direction in body frame
@@ -83,9 +113,14 @@ class QuaternionFinder:
             q_trans_e = self._safe_normalize(q=q_trans_e)
 
         # --- Combine Quaternion Errors --- #
-        # q_e_combined = self._quat_mult(q_trans_e, q_e)  # Apply translational first, then attitude
-        q_e_combined = self._quat_mult(q_e, q_trans_e)  # Apply translational first, then attitude
+        # q_e_combined = self._quat_mult(q_e, q_trans_e)  # Apply translational first, then attitude
+        q_e_combined = q_trans_e
         q_e_combined = self._safe_normalize(q=q_e_combined)
+
+        if side_effect:
+            self.error.append(l_e)
+
+        print(np.round(q_e_combined, 3))
 
         # --- Compute Angular Velocity from Quaternion Error --- #
         qdot = self.LQR.get_Qdot(q_e=q_e_combined)
@@ -104,20 +139,6 @@ class QuaternionFinder:
         q_e = self._quat_mult(trajectory, rocket_i)
         q_e = self._safe_normalize(q=q_e)
         return q_e
-
-
-    def _get_trajectory_attitude(self, alt_m: float = 0):
-        """Accesses attitude trajectory based on altitude and acquires quaternion"""
-        if alt_m == 0:
-            return np.array([0, 0, 0, 1])
-
-        return np.array([0, 0, 0, 1])
-
-    def _get_trajectory_location(self, alt_m: float = 0):
-        """Access location trajectory based on altitude"""
-        if alt_m == 0:
-            return np.array([0, 0, alt_m])
-        return np.array([0, 0, alt_m])
 
     def _quat_conj(self, q):
         """
@@ -145,9 +166,22 @@ class QuaternionFinder:
         ])
 
 
-    def _get_pose_by_altitude(self, alt: float):
+    def _get_pose_by_altitude(self, alt: float, side_effect: False):
+        #
+        # pos = np.array([0, 0, alt])
+        # x = np.sin(np.deg2rad(self.drift)/2)
+        # w = np.cos(np.deg2rad(self.drift)/2)
+        # quat = np.array([x, 0, 0, w])
+        #
+        # self.iteration += 1
+        # if self.iteration == 1600:
+        #     self.drift *= -1
+        #     self.iteration = 0
+        #
+        # return pos, quat
+
         try:
-            # p = 1/0
+            p = 1/0
             pos = np.array([
                 self.interp_x(alt),
                 self.interp_y(alt),
