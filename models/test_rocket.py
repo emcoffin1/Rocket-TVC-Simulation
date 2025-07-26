@@ -12,11 +12,11 @@ def print_results(time, pos, vel, q, rocket):
     print("FLIGHT ENDED")
 
     # Burntime
-    max_th_i = np.argmax(rocket.thrust)
+    # max_th_i = np.argmax(rocket.thrust)
     print(rocket.burntime)
     print(f"Burn Time:      {rocket.burntime:.2f}s")
     print(f"Average Thrust: {np.average(rocket.thrust):.2f}N")
-    print(f"Max Thrust:     {np.max(rocket.thrust):.2f}N at Time: {time[max_th_i]:.2f}s")
+    # print(f"Max Thrust:     {np.max(rocket.thrust):.2f}N at Time: {time[max_th_i]:.2f}s")
 
     # Altitude
     max_alt_i = np.argmax(pos[:, 2])  # correct array passed in
@@ -90,36 +90,9 @@ if __name__ == "__main__":
 
     for _ in range(steps):
         # Unpack state
-        a, b, c, d, rho, q, _, _ = rocket.getTotalForce(state, dt, side_effect=False)
+        thrust_body, drag_body, coriolis_body, total_global = rocket.getTotalForce(state, dt, side_effect=False)
         pos, vel, quat, omega, tvc_quat, mass, time, aoa, beta, gimbals = VehicleModels.unpackStates(state)
-        # print(time, ", ", a[2])
 
-        tt, qt = rocket.tvc.quaternion.get_path(alt=pos[2])
-
-
-        thrust_log.append(np.linalg.norm(b))
-        drag_log.append(b)
-        dynamicpress_log.append(np.linalg.norm(q))
-        # Log data
-        omega_log.append(omega)
-        time_log.append(time)
-        pos_log.append(pos)
-        vel_log.append(np.linalg.norm(vel))
-        quat_log.append(quat)
-        aoa_log.append(aoa)
-        beta_log.append(beta)
-        mass_log.append(mass)
-        density_log.append(rho)
-
-        actual_pitch = body_pitch_from_quat(quat)
-        target_pitch = body_pitch_from_quat(qt)
-        pitch_error = target_pitch - actual_pitch
-
-        actual_pitch_log.append(actual_pitch)
-        target_pitch_log.append(target_pitch)
-        pitch_error_log.append(pitch_error)
-
-        trajectory_log.append(np.array(pos) - np.array(tt))
 
         if not rocket.engine.combustion_chamber.active:
             print(f"ALT: {pos[2]}")
@@ -131,26 +104,27 @@ if __name__ == "__main__":
 
         # RK4 integration
         state = VehicleModels.rk4_step(rocket, state, dt)
-    omega_log = np.array(omega_log)
+
+        time_log.append(time)
+        pos_log.append(pos)
+        vel_log.append(vel)
+        omega_log.append(omega)
+        quat_log.append(quat)
+        dynamicpress_log.append(rocket.dynamic_pres[-1])
+
+    # -- UPDATE LOGS TO ARRAYS -- #
     time_log = np.array(time_log)
     pos_log = np.array(pos_log)
     vel_log = np.array(vel_log)
     quat_log = np.array(quat_log)
-    aoa_log = np.array(aoa_log)
-    beta_log = np.array(beta_log)
-    mass_log = np.array(mass_log)
-    thrust_log = np.array(thrust_log)
-    drag_log = np.array(drag_log)
-    density_log = np.array(density_log)
-    actual_pitch_log = np.array(actual_pitch_log)
-    target_pitch_log = np.array(target_pitch_log)
-    pitch_error_log = np.array(pitch_error_log)
-    trajectory_log = np.array(trajectory_log)
-    # dynamicpress_log = np.array(dynamicpress_log)
+    omega_log = np.array(omega_log)
+    dynamicpress_log = np.array(dynamicpress_log)
 
-    omega_com = np.array(rocket.tvc.quaternion.omega_command)
-    # print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
 
+
+    print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
+
+    #
     # print("--- EXTRA LOG ---")
     # plt.subplot(3,1,1)
     # plt.plot(time_log[:-1],rocket.velocity)
@@ -172,36 +146,36 @@ if __name__ == "__main__":
     #     q_e.append(x)
     # q_e = np.array(q_e)
 
-    q_e = np.array(rocket.tvc.quaternion.error)
-
-    plt.subplot(3,1,1)
-    # plt.plot(q_e[:,1], q_e[:,0])
-    plt.plot(time_log, pitch_error_log, label="ERROR")
-    # plt.plot(time_log, target_pitch_log, label="TARGET")
-    # plt.plot(time_log, actual_pitch_log, label="ACTUAL")
-    plt.xlabel("Time")
-    plt.ylabel("Pitch")
-    plt.legend()
-    plt.grid(True)
-
-    plt.subplot(3,1,2)
-    plt.plot(time_log, omega_log, label="ACTUAL w")
-    plt.plot(time_log[:-2], omega_com, label="COMMANDED w")
-    plt.xlabel("Time")
-    plt.ylabel("Omega")
-    plt.legend()
-    plt.grid(True)
-
-    plt.subplot(3,1,3)
-    plt.plot(time_log, trajectory_log[:,0], label="X")
-    plt.plot(time_log, trajectory_log[:,1], label="Y")
-    plt.xlabel("Time")
-    plt.ylabel("Trajectory Error")
-    plt.legend()
-    plt.grid(True)
-
-    plt.tight_layout()
-    plt.show()
+    # q_e = np.array(rocket.tvc.quaternion.error)
+    #
+    # plt.subplot(3,1,1)
+    # # plt.plot(q_e[:,1], q_e[:,0])
+    # plt.plot(time_log, pitch_error_log, label="ERROR")
+    # # plt.plot(time_log, target_pitch_log, label="TARGET")
+    # # plt.plot(time_log, actual_pitch_log, label="ACTUAL")
+    # plt.xlabel("Time")
+    # plt.ylabel("Pitch")
+    # plt.legend()
+    # plt.grid(True)
+    #
+    # plt.subplot(3,1,2)
+    # plt.plot(time_log, omega_log, label="ACTUAL w")
+    # plt.plot(time_log[:-2], omega_com, label="COMMANDED w")
+    # plt.xlabel("Time")
+    # plt.ylabel("Omega")
+    # plt.legend()
+    # plt.grid(True)
+    #
+    # plt.subplot(3,1,3)
+    # plt.plot(time_log, trajectory_log[:,0], label="X")
+    # plt.plot(time_log, trajectory_log[:,1], label="Y")
+    # plt.xlabel("Time")
+    # plt.ylabel("Trajectory Error")
+    # plt.legend()
+    # plt.grid(True)
+    #
+    # plt.tight_layout()
+    # plt.show()
 
     # plt.subplot(3,1,1)
     # plt.plot(time_log, vel_log)
@@ -217,25 +191,38 @@ if __name__ == "__main__":
 
 
     # rocket.mfr.append(rocket.mfr[-1]+ 0.00000001)
-    #
-    # plt.subplot(3, 1, 1)
-    # plt.plot(time_log[2:541], rocket.thrust[2:])
-    # plt.ylabel("Thrust [N]")
-    # plt.grid(True)
-    #
-    # plt.subplot(3,1,2)
-    # plt.plot(time_log[2:541], rocket.mfr[2:541])
-    # plt.ylabel("Mass Flow Rate [kg/s]")
-    # plt.grid(True)
-    #
-    # plt.subplot(3,1,3)
-    # plt.plot(time_log[2:541], rocket.pc[2:541])
-    # plt.ylabel("Chamber Pressure [Pa]")
-    # plt.xlabel("Time [s]")
-    # plt.grid(True)
+    gimb = np.array(rocket.tvc.gimbal_log)
+    quat_er = np.array(rocket.tvc.quaternion.quat_error)
+    pos_er = np.array(rocket.tvc.quaternion.pos_error)
 
-    # plt.tight_layout()
-    # plt.show()
+    plt.subplot(5, 1, 1)
+    plt.plot(time_log[:-1], gimb)
+    plt.ylabel("Deg")
+    plt.grid(True)
+
+    plt.subplot(5,1,2)
+    plt.plot(time_log[:-1], quat_er[:,0])
+    plt.ylabel("Quat Error")
+    plt.grid(True)
+
+    plt.subplot(5,1,3)
+    plt.plot(time_log[:-1], pos_er[:,0])
+    plt.ylabel("Pos Error")
+    plt.grid(True)
+
+    plt.subplot(5,1,4)
+    plt.plot(time_log, quat_log[:,:3])
+    plt.ylabel("QUAT")
+    plt.grid(True)
+
+    plt.subplot(5,1,5)
+    plt.plot(time_log, omega_log)
+    plt.ylabel("OMEGA")
+    plt.xlabel("Time [s]")
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()
 
 
 
@@ -267,7 +254,8 @@ if __name__ == "__main__":
     fig = plt.figure(figsize=(8, 6))
     ax = fig.add_subplot(111, projection='3d')
     ax.plot(x_vals, y_vals, z_vals, label='Trajectory Path')
-    # ax.plot(x_exp, y_exp, z_exp, label="Expected Path")
+    ax.plot(x_exp, y_exp, z_exp, label="Expected Path")
+    ax.set_box_aspect((1, 1, 1))
 
     ax.set_xlabel('X [m]')
     ax.set_ylabel('Y [m]')

@@ -73,8 +73,8 @@ def quaternionDerivative(quat, omega):
 class Rocket:
     def __init__(self):
 
-        q = np.eye(3) * 100
-        r = np.eye(3) * 0.5
+        q = np.diag([1,1,1,1,1])
+        r = np.eye(3) * 0.25
 
         # -- Constants -- #
         self.grav = EnvironmentalModels.GravityModel()
@@ -109,14 +109,14 @@ class Rocket:
         ])
 
         # -- Logging -- #
+        self.acc        = 0
         self.thrust     = []                     # Thrust curve
         self.burntime   = None                   # Time burn stops
         self.mach       = []                     # Mach list
         self.velocity   = []                     # Velocity list
         self.reynolds   = []                     # Reynolds list
         self.viscosity  = []
-        self.mfr        = []
-        self.pc         = []
+        self.dynamic_pres = []
 
         # Init print function
         self._initialize_vehicle()
@@ -138,43 +138,76 @@ class Rocket:
         # -- FORCES -- #
         # ============ #
 
-        thrust, drag, gravity, coriolis, rho, q_dyn, stat_pres, domega = self.getTotalForce(state=state, dt=dt,
-                                                                                            side_effect=side_effect)
-        force_total = thrust + drag + gravity + coriolis
+        thrust_vector_body, drag_force_body, coriolis_force_body, total_force_global = self.getTotalForce(
+            state=state, dt=dt, side_effect=side_effect)
 
         # ============================ #
         # -- TRANSLATION KINEMATICS -- #
         # ============================ #
 
         # Acceleration using a = F/m
-        acceleration = force_total / mass
+        acceleration    = total_force_global / mass
 
         # Position derivative = velocity
         dpos = vel
 
         # Velocity derivative = acceleration
-        dvel = acceleration
+        dvel            = acceleration
 
         # =========================== #
         # -- QUATERNION KINEMATICS -- #
         # =========================== #
 
         # Change in quaternion
-        dqdt = quaternionDerivative(quat, omega)
+        dqdt            = quaternionDerivative(quat, omega)
 
-        # ================= #
-        # -- Mass Change -- #
-        # ================= #
+        # ============================= #
+        # -- ANGULAR VELOCITY CHANGE -- #
+        # ============================= #
 
-        dmdt = self.structure.dm
+        # Lever arm in body frame
+        r_cp            = np.array([0.0, 0.0, self.structure.cp_current - self.structure.cm_current])
+        r_thrust        = np.array([0.0, 0.0, self.structure.length - self.structure.cm_current])
+
+        # Torques T = r (cross) F
+        torque_thrust   = np.linalg.cross(r_thrust, thrust_vector_body)
+        # torque_thrust = thrust_vector_body[0] * r_cp
+        torque_drag     = np.linalg.cross(r_cp, drag_force_body)
+        torque_coriolis = np.linalg.cross(r_cp, coriolis_force_body)
+        # torque_coriolis = np.zeros(3)
+        # torque_drag = np.zeros(3)
+        # torque_thrust = np.zeros(3)
+        torque_body_total = torque_thrust + torque_drag + torque_coriolis
+
+
+
+        # Angular acceleration
+        # domega          = torque_body_total / self.structure.I
+        domega          = -torque_thrust / self.structure.I
+        # domega = np.zeros(3)
+
+        if side_effect:
+            # print(f"THRUST: {np.round(torque_thrust,2)} || DRAG: {np.round(torque_drag,2)} || CORIOLIS: {np.round(torque_coriolis,2)}")
+            # print(f"T: {time} || THRUST: {np.round(thrust_vector_body,2)}")
+            # print(f"GIMBAL X: {np.rad2deg(self.tvc.theta_y):.2f} || TORQUE: {np.rad2deg(np.arctan(x/z)):.2f} || QUAT: {np.round(quat),3}")
+            # print(f"THRUST BODY: {np.round(thrust_vector_body,1)} || TORQUE BODY: {np.round(torque_thrust,2)} || TORQUE EARTH: {np.round(R.from_quat(quat).apply(torque_thrust),2)}")
+            # print(f"ACTUAL: {domega[1]*dt}")
+            # print(np.round(pos,2))
+            pass
 
         # ========================= #
         # -- GIMBAL ANGLE CHANGE -- #
         # ========================= #
 
-        dtheta_x = self.tvc.d_theta_x
-        dtheta_y = self.tvc.d_theta_y
-        dgimbal_q = quaternionDerivative(self.tvc.gimbal_orientation.as_quat(), np.array([dtheta_x, dtheta_y, 0.0]))
+        dtheta_x        = self.tvc.d_theta_x
+        dtheta_y        = self.tvc.d_theta_y
+        dgimbal_q       = quaternionDerivative(self.tvc.gimbal_orientation.as_quat(), np.array([dtheta_x, dtheta_y, 0.0]))
+
+        # ================= #
+        # -- Mass Change -- #
+        # ================= #
+
+        dmdt            = self.structure.dm
 
         # ====================== #
         # -- State Derivative -- #
@@ -182,8 +215,8 @@ class Rocket:
 
         # The change in state variables
         dstate = np.concatenate([
-            vel,
-            acceleration,
+            dpos,
+            dvel,
             dqdt,
             domega,
             dgimbal_q,
@@ -197,32 +230,29 @@ class Rocket:
         return dstate
 
     def getTotalForce(self, state, dt: float, side_effect: bool = True):
+        """Handles all force related equations"""
         # =============== #
         # -- Constants -- #
         # =============== #
-        pos, vel, quat, omega, tvc_quat, mass, time, aoa, beta, dtheta = unpackStates(state)
+        pos, vel, quat, omega, tvc_quat, mass, time, _, _, _ = unpackStates(state)
         alt_m = pos[2]
 
-        rho = self.air.getDensity()
-        stat_pres = self.air.getStaticPressure()
-        reynolds = self.air.getReynoldsNumber(np.linalg.norm(vel),characteristic_length=self.structure.diameter)
-        viscosity = self.air.getDynamicViscosity()
+        rho         = self.air.getDensity()
+        stat_pres   = self.air.getStaticPressure()
+        reynolds    = self.air.getReynoldsNumber(np.linalg.norm(vel),characteristic_length=self.structure.diameter)
+        viscosity   = self.air.getDynamicViscosity()
+        mach        = self.air.getMachNumber(velocity_mps=np.linalg.norm(vel))
 
-        # =================== #
-        # -- UPDATE THINGS -- #
-        # =================== #
+        # ================= #
+        # -- UPDATE LOGS -- #
+        # ================= #
 
         if side_effect:
-            m = round(self.air.getMachNumber(velocity_mps=np.linalg.norm(vel)), 2)
-            self.mach.append(m)
-            a,b = self.engine.combustion_chamber.getMassFlowRate()
-            self.mfr.append(a+b)
-            self.pc.append(self.engine.combustion_chamber.Pc)
-
+            self.mach.append(mach)
             self.reynolds.append(reynolds)
             self.viscosity.append(viscosity)
             self.velocity.append(np.linalg.norm(vel))
-            # print(round(time,2), np.round(quat,2))
+            self.dynamic_pres.append(self.air.getDynamicPressure(vel))
 
         # ============== #
         # -- Velocity -- #
@@ -230,92 +260,82 @@ class Rocket:
 
         # Velocity in world frame
         # velocity rocket - wind velocities
-        v_air = vel - self.wind.getWindVelocity(alt_m=pos[2])
+        v_air_global = vel - self.wind.getWindVelocity(alt_m=pos[2])
 
         # Determine rocket orientation on inertial frame
         r_world_to_body = R.from_quat(quat).inv()
 
         # Determine velocity of air on body (for drag calculations)
-        v_air_body = r_world_to_body.apply(v_air)
+        v_air_body = r_world_to_body.apply(v_air_global)
+
+        # ==================== #
+        # -- NATURAL FORCES -- #
+        # ==================== #
+
+        # Gravity [0 0 9.8] function of altitude
+        gravity_global = self.grav.getGravity(alt_m=alt_m)
+        gravity_force_global = gravity_global * mass
+
+        # Coriolis [x y z] function of velocity
+        coriolis_acc_body = self.cor.getCoriolisEffect(vel_m_s=v_air_body)
+        coriolis_force_body = coriolis_acc_body * mass
+        coriolis_force_body = np.zeros(3)
+        coriolis_force_global = R.from_quat(quat).apply(coriolis_force_body)
+
+        # ================= #
+        # -- DRAG FORCES -- #
+        # ================= #
 
         # Determine angle of vehicle for drag calculations (not currently implemented)
         aoa = np.arctan2(v_air_body[1], v_air_body[2])
         beta = np.arctan2(v_air_body[0], v_air_body[2])
 
-        # =================== #
-        # -- ACCELERATIONS -- #
-        # =================== #
-
-        gravity = self.grav.getGravity(alt_m=alt_m)
-        coriolis_acc = self.cor.getCoriolisEffect(vel_m_s=v_air_body)
+        # Drag force function
+        drag_force_body = self.aerodynamics.getDragForce(vel=v_air_body)
+        # drag_force_body = np.zeros(3)
+        drag_force_global = R.from_quat(quat).apply(drag_force_body)
 
         # =================== #
         # -- THRUST FORCES -- #
         # =================== #
 
-        # Get raw thrust (no direction)
+        # Get raw thrust (no direction) [z]
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
 
         # Save burntime for later display
         if thrust_mag == 0 and not self.burntime:
             self.burntime = time
-            # exit()
 
         # Update tvc thrust values for easier computing
         # !pulls data from other objects, keep as function!
         self.tvc.update_variables_(thrust_mag)
 
         # Get updated gimbal orientation in body frame
-        gimbal_orient: R = self.tvc.compute_gimbal_orientation(
-            time= time,
-            dt=   dt,
-            rocket_pos=   pos,
-            rocket_quat=  quat,
-            rocket_vel=   vel,
-            rocket_acc=   self._compute_acceleration(),  # however you get accel
-            side_effect= side_effect
+        thrust_dir_body: R = self.tvc.compute_gimbal_orientation(
+            time        = time,
+            dt          = dt,
+            rocket_pos  = pos,
+            rocket_quat = quat,
+            side_effect = side_effect
         )
 
         # Apply gimbal rotation to thrust vector in body frame
-        thrust_vector_body = gimbal_orient.apply([0.0, 0.0, thrust_mag])  # original thrust vector straight out
+        thrust_vector_body = thrust_dir_body * thrust_mag
 
         # Rotate thrust vecotr to inertial frame
-        r_body_to_world = R.from_quat(quat)     # Inertial frame rotation
-        thrust_force_global = r_body_to_world.apply(thrust_vector_body)     # Application of rotation
+        thrust_force_global = R.from_quat(quat).apply(thrust_vector_body)     # Application of rotation
 
         if side_effect and thrust_mag != 0:
             self.thrust.append(thrust_force_global)
+            # print(f"THRUST {np.round(thrust_force_global, 2)}")
 
-        # ================================ #
-        # -- CHANGE IN ANGULAR VELOCITY -- #
-        # ================================ #
+        # ======================== #
+        # -- TOTAL GLOBAL FORCE -- #
+        # ======================== #
 
-        # Length of vehicle
-        l_veh = self.structure.length
+        total_force_global = thrust_force_global + drag_force_global + gravity_force_global + coriolis_force_global
 
-        # Find torque using T = L*T*theta
-        torque_body = np.array([
-            -l_veh * thrust_mag * np.sin(self.tvc.theta_x_prev),
-            -l_veh * thrust_mag * np.sin(self.tvc.theta_y_prev),
-            0.0
-        ])
-
-        # Find change in angular velocity (alpha) using T/I ~~ Torque = inertia * angular accleration
-        domega = torque_body / self.structure.I
-
-        # ================= #
-        # -- DRAG FORCES -- #
-        # ================= #
-
-        drag_force = self.aerodynamics.getDragForce(vel=v_air_body)
-
-        # ====================== #
-        # -- DYNAMIC PRESSURE -- #
-        # ====================== #
-        q = self.air.getDynamicPressure(velocity_mps=vel)
-
-
-        return thrust_force_global, drag_force, (gravity*mass), (coriolis_acc * mass), rho, q, stat_pres, domega
+        return thrust_vector_body, drag_force_body, coriolis_force_body, total_force_global
 
     def _initialize_vehicle(self):
         """A function to immediately display vehicle information on launch/initialization"""
@@ -325,5 +345,7 @@ class Rocket:
         # print(f"Initial Fluid Mass:     {self.structure.liquidMass} [kg]")
         print(f"Initial Fluid Mass:     {self.structure.fluid_mass} [kg]")
         print("=" * 60)
+
+# thrust_vector_body = gimbal_orient.apply([0.0, 0.0, thrust_mag])  # original thrust vector straight out
 
 

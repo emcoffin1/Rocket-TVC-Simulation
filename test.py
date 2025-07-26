@@ -1,44 +1,23 @@
 import numpy as np
-import matplotlib.pyplot as plt
+from scipy.linalg import solve_continuous_are
 
-# Vortex parameters
-gamma = 4.0  # circulation strength (m^2/s)
+Q = np.diag([10, 10, 10, 5, 5])
+R = np.eye(3) * 0.5
 
-# Grid in polar coordinates
-r = np.linspace(0.05, 3.0, 300)
-theta = np.linspace(0, 2 * np.pi, 300)
-R, T = np.meshgrid(r, theta)
+A = np.zeros((5, 5))
+B = np.array([
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, 0.0, 1.0],
+    [1.0, 1.0, 0.0],
+    [0.0, 1.0, 1.0],
+], dtype=np.float64)
 
-# Convert to Cartesian
-X = R * np.cos(T)
-Y = R * np.sin(T)
+ctrb = np.hstack([B, A @ B, A @ A @ B, A @ A @ A @ B, A @ A @ A @ A @ B])
+print("Rank of controllability matrix:", np.linalg.matrix_rank(ctrb, tol=1e-12))
 
-# Streamfunction for a point vortex
-psi = -(gamma / (2 * np.pi)) * np.log(R)
+P = solve_continuous_are(A, B, Q, R)
+K = np.linalg.inv(R) @ B.T @ P
 
-# Velocity components (in polar)
-Vr = np.zeros_like(R)  # no radial flow in a pure vortex
-Vtheta = gamma / (2 * np.pi * R)
-
-# Convert to Cartesian components
-U = Vr * np.cos(T) - Vtheta * np.sin(T)
-V = Vr * np.sin(T) + Vtheta * np.cos(T)
-
-# Plotting
-fig, ax = plt.subplots(figsize=(8, 8))
-contours = ax.contour(X, Y, psi, levels=30, colors='blue', linewidths=0.7)
-ax.quiver(X[::10, ::10], Y[::10, ::10], U[::10, ::10], V[::10, ::10], color='black')
-
-# Mark the center
-ax.plot(0, 0, 'ro', label='Vortex center')
-
-ax.set_aspect('equal')
-ax.set_title("Streamlines and Velocity Field of a Vortex")
-ax.set_xlabel("x")
-ax.set_ylabel("y")
-ax.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.show()
-
-
+print("Gain K:")
+print(K)

@@ -16,7 +16,12 @@ class Aerodynamics:
         # -- Initialize other models -- #
         self.air = air
 
-    def _get_drag_coeff(self, mach_v):
+    def _get_drag_coeff(self, mach_v: float) -> float:
+        """
+        Returns drag coefficient based on mach and aoa wrt body frame
+        :param mach_v: Mach value in rocket frame
+        :return: Drag coefficient
+        """
         # Get mach value
         x = mach_v
         cd = None
@@ -28,7 +33,14 @@ class Aerodynamics:
             cd = -0.149*x + 0.733
         return cd
 
-    def getDragForce(self, vel, aoa = None):
+    def getDragForce(self, vel: np.ndarray, aoa: float = None) -> np.ndarray:
+        """
+        Gets drag force as a function of free stream velocity, cross-sectional area, density, and angle of attack
+        D = 0.5 * rho * V^2 * A * Cd
+        :param vel: Velocity in body frame [x y z] [m/s]
+        :param aoa: Angle of attack of freestream velocity on body [rad]
+        :return: Drag force [x y z] [N]
+        """
         v_mag = np.linalg.norm(vel)
         if v_mag == 0:
             return np.zeros(3)
@@ -39,16 +51,3 @@ class Aerodynamics:
         drag = 0.5 * self.air.rho * vel ** 2 * cd * 0.0545
         return drag * drag_direction
 
-
-
-
-# #
-# air = Aerodynamics()
-# mach = np.arange(0, 5, 0.01)
-# cd = []
-# for x in mach:
-#     cd.append(air.getDragCoeff(x))
-#
-# plt.plot(mach, cd)
-# plt.grid(True)
-# plt.show()

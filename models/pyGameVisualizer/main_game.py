@@ -102,21 +102,23 @@ while running:
     pygame.draw.line(screen, (200,200,200), (WIDTH//2, HEIGHT), (WIDTH//2, 0), 2)
 
     # — Rocket body line —
-    r_len     = -50
-    pitch_rad = math.radians(pitch)
-    x0        = rocket_pos[0] + pos[0]
-    y0        = rocket_pos[1]
-    x1        = x0 + r_len * math.sin(pitch_rad)
-    y1        = y0 + r_len * math.cos(pitch_rad)
-    pygame.draw.line(screen, (255,255,255), (x0, y0), (x1, y1), 8)
+    r_len = -50
+    pitch_rad = math.radians(pitch)  # global pitch angle of rocket
+    x0 = rocket_pos[0] + pos[0]
+    y0 = rocket_pos[1]
+    x1 = x0 + r_len * math.sin(pitch_rad)
+    y1 = y0 + r_len * math.cos(pitch_rad)
+    pygame.draw.line(screen, (255, 255, 255), (x0, y0), (x1, y1), 8)
 
     # — Thrust vector if firing —
     if firing:
-        t_len = 15
-        a_rad = math.radians(thrust_angle)
-        end_x = rocket_pos[0] + t_len * math.sin(a_rad)
-        end_y = rocket_pos[1] + t_len * math.cos(a_rad)
-        pygame.draw.line(screen, (255,0,0), rocket_pos, (end_x, end_y), 5)
+        t_len = 20
+        gimbal_angle = rocket.tvc.theta_y  # gimbal deflection in radians (relative to body)
+        total_angle = pitch_rad + gimbal_angle  # global thrust direction
+
+        end_x = x0 + t_len * math.sin(total_angle)
+        end_y = y0 + t_len * math.cos(total_angle)
+        pygame.draw.line(screen, (255, 0, 0), (x0, y0), (end_x, end_y), 2)
 
     # Update display & time
     pygame.display.flip()

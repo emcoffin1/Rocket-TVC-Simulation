@@ -20,22 +20,39 @@ class StructuralModel:
         # -- Structural Measurements -- #
         # The dimensions of the fins are not included in the structural models due to
         # its low impact, it is however considered in the aerodynamics model
-        self.length = 5.4864                                        # [m] -- 18 feet --- Total length of the vehicle
-        self.diameter = 0.254                                       # [m] -- 10 in   --- Diameter of vehicle
+        self.length         = 5.4864                                # [m] -- 18 feet --- Total length of the vehicle
+        self.diameter       = 0.254                                 # [m] -- 10 in   --- Diameter of vehicle
         self.cm_offset_roll = 0.0                                   # [m] Center of mass offset on roll axis
 
-        # -- Mass Constants [kg] -- #
+        # -- MASS CONSTANTS [kg] -- #
         liquid_total_mass_ratio = liquid_total_ratio                # ratio of liquid mass to total mass
-        self.fluid_mass = self.engine.getFluidMass()                # Total fluid mass
-        self.wetMass = self.fluid_mass / liquid_total_mass_ratio    # Total mass before launch
-        self.dryMass = self.wetMass - self.fluid_mass               # Mass at end of burn, void of liquid mass
+        self.fluid_mass     = self.engine.getFluidMass()            # Total fluid mass
+        self.wetMass        = self.fluid_mass / liquid_total_mass_ratio    # Total mass before launch
+        self.dryMass        = self.wetMass - self.fluid_mass               # Mass at end of burn, void of liquid mass
+        self.mass_current   = self.wetMass                          # [kg] Adaptive flight mass
+        self.dm             = 0                                     # [kg] Change in mass per time step
 
-        # -- Center of Mass Constants [m] -- #
-        self.cm_initial = 0.28448
-        self.cm_final = 0.29718
+        # ======================== #
+        # -- CENTER OF MASS [m] -- #
+        # ======================== #
 
-        # -- Moments of Inertia [kg*m^2] -- #
-        self.roll_inertia = None                                    # [kg*m^2] Roll inertia (does not change)
+        self.cm_initial     = 3.42392
+        self.cm_final       = 3.5687
+        self.cm_current     = self.cm_initial                       # [m] Adaptive center of mass
+
+        # ============================ #
+        # -- CENTER OF PRESSURE [m] -- #
+        # ============================ #
+
+        self.cp_initial     = 3.59
+        self.cp_final       = 3.59
+        self.cp_current     = 3.59
+
+        # ================================= #
+        # -- MOMENTS OF INERTIA [kg*m^2] -- #
+        # ================================= #
+
+        self.roll_inertia   = None                                  # [kg*m^2] Roll inertia (does not change)
         self.pitch_yaw_inertia = None                               # [kg8m^2] Pitch and yaw inertia (does change)
         self.I = np.array([
             self.pitch_yaw_inertia,
@@ -43,28 +60,28 @@ class StructuralModel:
             self.roll_inertia
         ])
 
-        # -- Variables -- #
-        self.mass_current = self.wetMass                            # [kg] Adaptive flight mass
-        self.dm = 0                                                 # [kg] Change in mass per time step
-        self.cm_current = self.cm_initial                           # [m] Adaptive center of mass
+        # ================ #
+        # -- FLEX MODES -- #
+        # ================ #
+        # not implemented
+
         self.flex_modes = [
             FlexModes(mode_num=1, frequency=8.0, damping=0.02, modal_mass=0.3 * self.mass_current),
             FlexModes(mode_num=2, frequency=24.0, damping=0.03, modal_mass=0.15 * self.mass_current)
         ]
         self._update_Inertia()
 
-
     def updateProperties(self):
         """
         Updates all structurally related properties and variables
-        UPDATE ONLY ONCE PER TIMESTEP
+        !UPDATE ONLY ONCE PER TIMESTEP!
         """
         self._update_Total_Mass()
         self._update_CM()
         self._update_Inertia()
 
     def _update_Total_Mass(self):
-        """Method to get the time change over previous time step"""
+        """Method to get the mass change over previous time step"""
         # Mass update
         if self.engine.combustion_chamber.active:
             # Determine total mass of the vehicle from tank updates
