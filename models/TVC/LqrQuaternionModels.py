@@ -92,6 +92,7 @@ class QuaternionFinder:
 
         # Determine attitude error: q_err = q_body^-1 (quat-mult) q_des
         q_err = self._quat_mult(self._quat_conj(rocket_quat), att_des)
+        q_err[3] = 0
         q_err = self._align_sign(self._safe_normalize(q_err))
 
         # Determine lateral drift error (only worry about XY)

@@ -53,7 +53,7 @@ class TVCStructure:
         self.I_pitchyaw = self.struct.pitch_yaw_inertia
 
 
-    def compute_gimbal_orientation(self,
+    def _compute_gimbal_orientation(self,
                                    time: float,
                                    dt: float,
                                    rocket_pos: np.ndarray,
@@ -132,8 +132,8 @@ class TVCStructure:
         sy = np.sin(self.theta_y)
         cy = np.cos(self.theta_y)
         thrust_dir_body = np.array([
-            + sy,  # X‐component from pitch
-            - sx,  # Y‐component from roll
+            - sy,  # X‐component from pitch
+            + sx,  # Y‐component from roll
             cx * cy  # Z‐component
         ])
 
@@ -144,7 +144,7 @@ class TVCStructure:
 
         return thrust_dir_body
 
-    def _compute_gimbal_orientation(self,
+    def compute_gimbal_orientation(self,
                                    time: float,
                                    dt: float,
                                    rocket_pos: np.ndarray,

@@ -184,7 +184,7 @@ class Rocket:
         # Angular acceleration
         # domega          = torque_body_total / self.structure.I
         domega          = -torque_thrust / self.structure.I
-        # domega = np.zeros(3)
+        domega = np.zeros(3)
 
         if side_effect:
             # print(f"THRUST: {np.round(torque_thrust,2)} || DRAG: {np.round(torque_drag,2)} || CORIOLIS: {np.round(torque_coriolis,2)}")
@@ -320,7 +320,8 @@ class Rocket:
         )
 
         # Apply gimbal rotation to thrust vector in body frame
-        thrust_vector_body = thrust_dir_body * thrust_mag
+        thrust_vector_body = thrust_dir_body.apply([0, 0, thrust_mag])
+        # thrust_vector_body = thrust_dir_body * thrust_mag
 
         # Rotate thrust vecotr to inertial frame
         thrust_force_global = R.from_quat(quat).apply(thrust_vector_body)     # Application of rotation
