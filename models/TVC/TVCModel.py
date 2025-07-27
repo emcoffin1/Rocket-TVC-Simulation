@@ -85,8 +85,11 @@ class TVCStructure:
         self.d_theta_y = dty / dt
 
         # Update gimbal
-        r_step_x = R.from_rotvec(rotvec=[0, -dtx, 0])
-        r_step_y = R.from_rotvec(rotvec=[dty, 0, 0])
+        # r_step_x = R.from_rotvec(rotvec=[0, dtx, 0])
+        # r_step_y = R.from_rotvec(rotvec=[dty, 0, 0])
+
+        r_step_x = R.from_rotvec(rotvec=[dtx,0, 0])
+        r_step_y = R.from_rotvec(rotvec=[0,dty, 0])
         self.gimbal_orientation = (r_step_y * r_step_x) * self.gimbal_orientation
 
         if side_effect:
@@ -188,7 +191,7 @@ class TVCStructure:
 
 
 class FinTab:
-    def __init__(self, rocket_position: np.ndarray):
+    def __init__(self, rocket_position: np.ndarray, name):
         """Controls roll authority through the x-axis using fin tabs"""
 
         # Location of the fin wrt the center of gravity
@@ -196,6 +199,8 @@ class FinTab:
         # Depicts the direction of the forces acting on the component using cross product and normalization
         force_direction = np.linalg.cross(np.array([0, 0, 1]), rocket_position)
         self.force_direction = force_direction / np.linalg.norm(force_direction)
+
+        self.name = name
 
         self.radial_distance = rocket_position[0] if rocket_position[0] != 0 else rocket_position[1]
         self.tab_theta  = 0
@@ -224,6 +229,7 @@ class RollControl:
         :param angle: Angle [rad]
         """
         tab.tab_theta = angle
+        # print( np.round(np.degrees(angle),2))
 
 
     def calculate_theta(self, torque_cmd: np.ndarray, rho: float, vel: np.ndarray, dt: float):
@@ -243,7 +249,7 @@ class RollControl:
 
                 # -- FIND THETA REQUIRED -- #
                 # a negative deflection results in a positive torque
-                theta_target_raw = -torque_cmd[2] / (4 * rho * vel_mag**2 * x.area * np.pi * x.radial_distance)
+                theta_target_raw = -torque_cmd[2] / (rho * vel_mag**2 * x.area * np.pi * x.radial_distance)
 
                 # Clip to maximum angle
                 theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)

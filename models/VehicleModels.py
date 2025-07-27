@@ -73,8 +73,8 @@ def quaternionDerivative(quat, omega):
 class Rocket:
     def __init__(self):
 
-        q = np.diag([5, 5, 5, 1, 1, 1])
-        r = np.eye(3) * 0.1
+        q = np.diag([20, 20, 20, 10, 10, 10, 3, 3])
+        r = np.eye(3) * 2
 
         # -- Constants -- #
         self.grav = EnvironmentalModels.GravityModel()
@@ -96,10 +96,10 @@ class Rocket:
         # -- TABS -- #
         z_comp = self.structure.cm_current - self.structure.length
         r_comp = 0.2032
-        self.pos_x_tab = FinTab(rocket_position=np.array([r_comp, 0, z_comp]))
-        self.neg_x_tab = FinTab(rocket_position=np.array([-r_comp, 0, z_comp]))
-        self.pos_y_tab = FinTab(rocket_position=np.array([0, r_comp, z_comp]))
-        self.neg_y_tab = FinTab(rocket_position=np.array([0, -r_comp, z_comp]))
+        self.pos_x_tab = FinTab(rocket_position=np.array([r_comp, 0, z_comp]), name="PX")
+        self.neg_x_tab = FinTab(rocket_position=np.array([-r_comp, 0, z_comp]), name="NX")
+        self.pos_y_tab = FinTab(rocket_position=np.array([0, r_comp, z_comp]), name="PY")
+        self.neg_y_tab = FinTab(rocket_position=np.array([0, -r_comp, z_comp]), name="NY")
         self.fins = [self.pos_x_tab, self.neg_x_tab, self.pos_y_tab, self.neg_y_tab]
         self.roll_control = RollControl(fins=self.fins, struct=self.structure)
 
@@ -183,11 +183,14 @@ class Rocket:
 
         # Torques T = r (cross) F
         torque_thrust = np.linalg.cross(r_thrust, thrust_vector_body)
+        # torque_thrust = np.linalg.cross(thrust_vector_body, r_thrust)
         torque_drag = np.linalg.cross(r_cp, drag_force_body)
         torque_coriolis = np.linalg.cross(r_cp, coriolis_force_body)
         torque_roll = np.zeros(3)
         for f, x in zip(lift_force_body, self.roll_control.fins):
-            torque_roll += np.linalg.cross(x.location, f)
+            torque = np.linalg.cross(x.location, f)
+            print(f"Location: {x.name}, Force: {f}, Torque: {torque}")
+            torque_roll += torque
 
         torque_body_total = torque_thrust + torque_drag + torque_coriolis + torque_roll
 
@@ -204,8 +207,17 @@ class Rocket:
             # print(f"THRUST BODY: {np.round(thrust_vector_body,1)} || TORQUE BODY: {np.round(torque_thrust,2)} || TORQUE EARTH: {np.round(R.from_quat(quat).apply(torque_thrust),2)}")
             # print(f"ACTUAL: {domega[1]*dt}")
             # print(np.round(pos,2))
-            print(f"ACTUAL TORQUE: {np.round(torque_thrust+torque_roll, 2)}")
+            # print(f"ACTUAL TORQUE: {np.round(torque_thrust+torque_roll, 2)}")
+            # print(f"DEFLECTED THRUST {np.round(thrust_vector_body,2)}")
+            # print(f"ACTUAL: {np.round(torque_roll, 2)}")
             pass
+
+        # if side_effect and (8.0 < time < 8.1):
+        #     print(f"ACTUAL: {np.round(torque_roll + torque_thrust, 2)}")
+        #     pass
+
+        # if side_effect and (8.0 < time < 8.1):
+        #     print(f"CALC TORQUE: {np.round(torque_thrust + torque_roll,2)}")
 
         # ========================= #
         # -- GIMBAL ANGLE CHANGE -- #
@@ -276,6 +288,8 @@ class Rocket:
 
         # Determine rocket orientation on inertial frame
         r_world_to_body = R.from_quat(quat).inv()
+        # if side_effect:
+        #     print(r_world_to_body)
 
         # Determine velocity of air on body (for drag calculations)
         v_air_body = r_world_to_body.apply(v_air_global)
@@ -307,12 +321,15 @@ class Rocket:
         # drag_force_body = np.zeros(3)
         drag_force_global = R.from_quat(quat).apply(drag_force_body)
 
+
+
         # =================== #
         # -- THRUST FORCES -- #
         # =================== #
 
         # Get raw thrust (no direction) [z]
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
+        acc_mag = thrust_mag / mass
 
         # Save burntime for later display
         if thrust_mag == 0 and not self.burntime:
@@ -322,12 +339,17 @@ class Rocket:
         # !pulls data from other objects, keep as function!
         self.tvc.update_variables_(thrust_mag)
 
-        torque_cmd = self.quaternion.compute_command_torque(rocket_pos=pos, rocket_quat=quat,
-                                                                             inertia_matrix=self.structure.I,
-                                                                             rocket_omega=omega,
-                                                                             side_effect=side_effect
-                                                                             )
+        if thrust_mag != 0:
+            torque_cmd = self.quaternion.compute_command_torque(rocket_pos=pos, rocket_quat=quat, time=time,
+                                                                                 inertia_matrix=self.structure.I,
+                                                                                 rocket_omega=omega,
+                                                                                 rocket_vel=v_air_body,
+                                                                                 acc_mag=acc_mag,
+                                                                                 side_effect=side_effect
+                                                                                 )
 
+        else:
+            torque_cmd = np.zeros(3)
         # Get updated gimbal orientation in body frame
         thrust_dir_body: R = self.tvc.compute_gimbal_orientation_using_torque(
             torque_body_cmd=torque_cmd,
@@ -342,8 +364,10 @@ class Rocket:
         # Rotate thrust vecotr to inertial frame
         thrust_force_global = R.from_quat(quat).apply(thrust_vector_body)  # Application of rotation
 
-        if side_effect and thrust_mag != 0:
-            self.thrust.append(thrust_force_global)
+        # if side_effect and thrust_mag != 0:
+        #     self.thrust.append(thrust_force_global)
+
+
             # print(f"THRUST {np.round(thrust_force_global, 2)}")
 
         # ================== #
@@ -359,9 +383,27 @@ class Rocket:
         # Convert to body force after summing the arrays (should come to 0)
         lift_force_global = R.from_quat(quat).apply(sum(lift_force_body))
 
+        if side_effect:
+            # print(f"BODY: {np.round(lift_force_body[0],2),
+            # np.round(lift_force_body[1],2),
+            # np.round(lift_force_body[2],2),
+            # np.round(lift_force_body[3],2),}  ||  GLOBAL: {np.round(lift_force_global,2)}")
+            pass
         # ======================== #
         # -- TOTAL GLOBAL FORCE -- #
         # ======================== #
+
+        if side_effect and (8.0 < time < 8.1):
+            # print("Thrust (Body):", thrust_vector_body)
+            # print("Thrust (Global):", thrust_force_global)
+            # print("Drag (Body):", drag_force_body)
+            # print("Drag (Global):", drag_force_global)
+            # print("Nose vector (global):", R.from_quat(quat).apply([0, 0, 1]))
+            # print("Thrust (global):", thrust_force_global / np.linalg.norm(thrust_force_global))
+            # lat_thrust = np.linalg.norm(thrust_vector_body[:2] * thrust_mag)
+            # print(f"Lateral thrust: {lat_thrust:.2f} N")
+
+            pass
 
         total_force_global = (thrust_force_global + drag_force_global + gravity_force_global +
                               coriolis_force_global + lift_force_global)
