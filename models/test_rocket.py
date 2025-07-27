@@ -192,26 +192,29 @@ if __name__ == "__main__":
 
     # rocket.mfr.append(rocket.mfr[-1]+ 0.00000001)
     gimb = np.array(rocket.tvc.gimbal_log)
-    quat_er = np.array(rocket.quaternion.quat_error)
+    quat_er = np.array([q.as_quat() for q in rocket.quaternion.quat_error])
     pos_er = np.array(rocket.quaternion.pos_error)
 
     plt.subplot(5, 1, 1)
-    plt.plot(time_log[:-1], gimb)
+    plt.plot(time_log, gimb)
     plt.ylabel("Deg")
     plt.grid(True)
 
     plt.subplot(5,1,2)
-    plt.plot(time_log, quat_er[:,0])
+    plt.plot(time_log, quat_er[:, 0], label="qx")
+    plt.plot(time_log, quat_er[:, 1], label="qy")
+    plt.plot(time_log, quat_er[:, 2], label="qz")
+    plt.plot(time_log, quat_er[:, 3], label="qw")
     plt.ylabel("Quat Error")
     plt.grid(True)
 
     plt.subplot(5,1,3)
-    plt.plot(time_log, pos_er[:,0])
+    plt.plot(time_log, pos_er)
     plt.ylabel("Pos Error")
     plt.grid(True)
 
     plt.subplot(5,1,4)
-    plt.plot(time_log, quat_log)
+    plt.plot(time_log, quat_log[:,-1])
     plt.ylabel("QUAT")
     plt.grid(True)
 

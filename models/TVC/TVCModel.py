@@ -43,12 +43,56 @@ class TVCStructure:
         self.I_roll     = self.struct.roll_inertia
         self.I_pitchyaw = self.struct.pitch_yaw_inertia
 
-
-    def compute_gimbal_orientation_using_torque(self):
+    def compute_gimbal_orientation_using_torque(self, torque_body_cmd: np.ndarray, dt: float, side_effect: bool = False):
         """
         Computes gimbal angle using torque commands computed by the LQR
+        theta = Torque (of opposite axis) / (Thrust * HEIGHT-CG)
         :return:
         """
+        lever       = self.height - self.struct.cm_current
+
+        # ==================================== #
+        # -- COMPUTE REQUIRED GIMBAL ANGLES -- #
+        # ==================================== #
+        if self.thrust > 1e-6:
+            theta_x_raw = -torque_body_cmd[1] / (self.thrust * lever)
+            theta_y_raw = torque_body_cmd[0] / (self.thrust * lever)
+        else:
+            theta_x_raw = 0
+            theta_y_raw = 0
+
+        # Clip gimbal to max angles
+        theta_x_raw_clip = np.clip(theta_x_raw, -self.max_angle, self.max_angle)
+        theta_y_raw_clip = np.clip(theta_y_raw, -self.max_angle, self.max_angle)
+
+        # First-order filter
+        alpha = dt / (self.gimbal_tau + dt)
+        tx_filter = (1 - alpha) * self.theta_x + alpha * theta_x_raw_clip
+        ty_filter = (1 - alpha) * self.theta_y + alpha * theta_y_raw_clip
+
+        # Rate Limit
+        dtx = np.clip(tx_filter - self.theta_x, -self.max_rate * dt, self.max_rate * dt)
+        dty = np.clip(ty_filter - self.theta_y, -self.max_rate * dt, self.max_rate * dt)
+
+        # ==================== #
+        # -- UPDATED GIMBAL -- #
+        # ==================== #
+
+        # Save values
+        self.theta_x += dtx
+        self.theta_y += dty
+        self.d_theta_x = dtx / dt
+        self.d_theta_y = dty / dt
+
+        # Update gimbal
+        r_step_x = R.from_rotvec(rotvec=[dtx, 0, 0])
+        r_step_y = R.from_rotvec(rotvec=[0, -dty, 0])
+        self.gimbal_orientation = (r_step_y * r_step_x) * self.gimbal_orientation
+
+        if side_effect:
+            self.gimbal_log.append([np.rad2deg(self.theta_x), np.rad2deg(self.theta_y)])
+
+        return self.gimbal_orientation
 
     def compute_gimbal_orientation_using_omega(self, time: float, dt: float, omega_cmd: np.ndarray,
                                    q_err: np.ndarray, side_effect: bool = False) -> R:
@@ -160,10 +204,8 @@ class FinTab:
         self.area       = 0.0045
         self.max_tab_angle = np.deg2rad(15)
         self.max_dtheta = np.deg2rad(750)     # Maximum dtheta per second
+        self.motor_tau = 0.5
 
-    def update_tab_angle(self, angle: float):
-        """Updates the tab angle of a given fin control surface"""
-        self.tab_angle = angle
 
 class RollControl:
     def __init__(self, fins: list, struct: object):
@@ -184,36 +226,41 @@ class RollControl:
         tab.tab_theta = angle
 
 
-    def calculate_theta(self, omega_cmd: np.ndarray, rho: float, vel: np.ndarray, dt: float):
+    def calculate_theta(self, torque_cmd: np.ndarray, rho: float, vel: np.ndarray, dt: float):
         """
         Function to determine the tab angles to attain a specific roll rate
-        :param omega_cmd: Omega command determined from LQR [x y z]
+        :param torque_cmd: Torque command determined from LQR [Tx Ty Tz]
         :param rho: Density at current altitude [kg/m3]
         :param vel: Velocity of air in body frame [x y z]
         :param dt: Time step [s]
         :return: x_theta, -x_theta, y_theta, -y_theta
         """
         r_list = []
-        roll_i = self.struct.I[2]
         vel_mag = np.linalg.norm(vel)
 
         for x in self.fins:
-            if vel_mag > 0:
-                theta_target_raw = (roll_i * omega_cmd[2]) / (4 * rho * vel_mag**2 * x.area * np.pi * x.radial_distance)
+            if vel_mag > 1e-6:
+
+                # -- FIND THETA REQUIRED -- #
+                # a negative deflection results in a positive torque
+                theta_target_raw = -torque_cmd[2] / (4 * rho * vel_mag**2 * x.area * np.pi * x.radial_distance)
 
                 # Clip to maximum angle
                 theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)
 
-                # Ensure dtheta !> max dtheta
-                dtheta = (theta_target_raw_clipped - x.tab_theta) / dt
+                # Apply first order filter
+                alpha = dt / (x.motor_tau + dt)
+                theta_filter = (1 - alpha) * x.tab_theta + alpha * theta_target_raw_clipped
 
-                if abs(dtheta) > x.max_dtheta:
-                    # If exceeds rate
-                    dtheta = x.max_dtheta * dt
-                    theta_target_raw_clipped = x.tab_theta + dtheta
+                # Ensure dtheta !> max dtheta
+                dtheta = (theta_filter - x.tab_theta) / dt
+                dtheta = np.clip(dtheta, -x.max_dtheta * dt, x.max_dtheta * dt)
+
+                theta = x.tab_theta + dtheta
+
                 x.previous_theta = x.tab_theta
                 x.dtheta = dtheta
-                self.update_fin_angles(x, theta_target_raw_clipped)
+                self.update_fin_angles(x, theta)
 
                 r_list.append(x.tab_theta)
 

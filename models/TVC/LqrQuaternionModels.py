@@ -36,6 +36,7 @@ class LQR:
         :param inertia_matrix: rocket inertia matrix [Ixx, Iyy, Izz]
         :return: Torque command in body frame [Tx, Ty, Tz]
         """
+        inertia_matrix = np.diag(inertia_matrix)
         k = self._compute_gain(inertia_matrix=inertia_matrix)
         torque = -k @ x
         return torque
@@ -60,7 +61,7 @@ class QuaternionFinder:
         self.iter = 0
         self.cur_ang = np.deg2rad(0)
 
-    def compute_command_omega(self, rocket_pos, rocket_quat, rocket_omega, inertia_matrix, side_effect = None):
+    def compute_command_torque(self, rocket_pos, rocket_quat, rocket_omega, inertia_matrix, side_effect = None):
         """TAKE 2
         step 1: detect lateral drift
                 find drift with location_exp - location_current
@@ -91,20 +92,20 @@ class QuaternionFinder:
 
             pass to lqr
         """
-        alt_m = rocket_pos[2]
-        k = 0.5
+        alt_m       = rocket_pos[2]
+        k           = 0.5
 
         # =================== #
         # -- LATERAL DRIFT -- #
         # =================== #
 
         # Direction of up on the rocket (through the nose cone)
-        body_frame = np.array([0.0, 0.0, 1.0])
+        body_frame  = np.array([0.0, 0.0, 1.0])
 
         target_pos, target_quat = self.get_pose_by_altitude(alt=alt_m)
 
-        drift = target_pos - rocket_pos
-        corr_v = -k * drift
+        drift       = target_pos - rocket_pos
+        corr_v      = -k * drift
 
         if np.linalg.norm(corr_v) > 1e-6:
             corr_v /= np.linalg.norm(corr_v)
@@ -124,40 +125,40 @@ class QuaternionFinder:
             q_drift = np.array([0.0, 0.0, 0.0, 1.0])
         else:
             angle = np.arccos(np.clip(np.dot(body_frame, desired_thrust_world), -1.0, 1.0))
-            q_drift = R.from_rotvec(rotvec=(rotation_axis * angle)).to_quat()
+            q_drift = R.from_rotvec(rotvec=(rotation_axis * angle)).as_quat()
 
         # ===================== #
         # -- TARGET ATTITUDE -- #
         # ===================== #
 
-        q_target = R.from_quat(quat=target_quat)
+        q_target    = R.from_quat(quat=target_quat)
+        q_drift     = R.from_quat(quat=q_drift)
+        q_desired   = q_drift * q_target
 
+        # ============== #
         # -- ROTATION -- #
-        q_current = R.from_quat(quat=rocket_quat)
-        q_desired = q_drift * q_target
+        # ============== #
 
-        q_err = q_desired * q_current.inv()
-        q_err_v = q_err.as_quat()[:3]
+        q_current   = R.from_quat(quat=rocket_quat)
 
-        x_lqr = np.concatenate([q_err_v, rocket_omega])
+        q_err       = q_desired * q_current.inv()
+        q_err_v     = q_err.as_quat()[:3]
 
-        torque = self.lqr.get_torque(x=x_lqr, inertia_matrix=inertia_matrix)
+        # State vector
+        x_lqr       = np.concatenate([q_err_v, rocket_omega])
+
+        torque      = self.lqr.get_torque(x=x_lqr, inertia_matrix=inertia_matrix)
+
+        if side_effect:
+            print(f"EXPECTED TORQUE: {np.round(torque, 2)}")
+            # print(f"DRIFT: {np.round(drift,2)}")
+            self.quat_error.append(q_err)
+            self.pos_error.append(drift)
+            pass
 
         return torque
 
-
-
-
-
-
-
-
-
-
-
     # --- Lookup Trajectories ---------------------------------------------------
-
-
 
     def _load_lookup_table(self, csv_path: str):
         df = pd.read_csv(csv_path)
