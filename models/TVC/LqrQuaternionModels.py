@@ -10,47 +10,35 @@ import os
 class LQR:
     def __init__(self, q: np.ndarray = None, r: np.ndarray = None):
         # Places emphasis on quaternion correction
-        self.q = q if q is not None else np.diag([1, 1, 1, 0.5, 0.5]) * 10
-
+        self.q = q if q is not None else np.diag([1, 1, 1, 1, 1, 1])
         self.r = r if r is not None else np.eye(3) * 1
 
-        self.k = self._compute_gain()
+    def _compute_gain(self, inertia_matrix: np.ndarray):
+        # System matrices (6x6 and 6x3)
+        A = np.block([
+            [np.zeros((3, 3)), np.eye(3)],
+            [np.zeros((3, 3)), np.zeros((3, 3))]
+        ])
 
-    def _compute_gain(self):
-        A = np.zeros((5, 5))
-        # B = np.array([
-        #     [2.0, 0.0, 0.0],  # ωₓ → qₓ
-        #     [0.0, 2.0, 0.0],  # ωᵧ → qᵧ
-        #     [0.0, 0.0, 1.0],  # ω_z → q_z
-        #     [0.0, 1.0, 0.0],  # pitch → x drift correction
-        #     [0.0, 0.0, 1.0],  # yaw   → y drift correction
-        # ])
-        B = np.zeros((5, 3))
-        B[0, 0] = 1.0     # ωₓ → q_x
-        B[1, 1] = 1.0     # ωᵧ → q_y
-        B[2, 2] = 1.0     # ω_z → q_z
-
-        # drift correction coupling
-        B[3, 1] = 1.0     # pitch →  x‑drift
-        B[4, 2] = 1.0     #  yaw  →  y‑drift
-
-
+        B = np.block([
+            [np.zeros((3, 3))],
+            [np.linalg.inv(inertia_matrix)]
+        ])
 
         P = solve_continuous_are(A, B, self.q, self.r)
         K = np.linalg.inv(self.r) @ B.T @ P
         return K
 
-    def get_Qdot(self, q_err: np.ndarray, pos_err2d: np.ndarray) -> np.ndarray:
+    def get_torque(self, x: np.ndarray, inertia_matrix: np.ndarray) -> np.ndarray:
         """
-        Takers quaternion error and return desired quaternion derivative
-        :param q_err: error quaternion [x y z w]
-        :param pos_err2d: positional error in 2 dimensions [x y]
-        :return: quaternion derivative [x y z w]
+        Takers state variables and returns torque command
+        :param x: 6x state vector [qx, qy, qz, wx, wy, wz]
+        :param inertia_matrix: rocket inertia matrix [Ixx, Iyy, Izz]
+        :return: Torque command in body frame [Tx, Ty, Tz]
         """
-        q_vec = q_err[:3]
-        x = np.concatenate([q_vec, pos_err2d])
-        dq_vec = -self.k @ x
-        return np.array([dq_vec[0], dq_vec[1], dq_vec[2], 0.0])
+        k = self._compute_gain(inertia_matrix=inertia_matrix)
+        torque = -k @ x
+        return torque
 
 
 class QuaternionFinder:
@@ -59,9 +47,8 @@ class QuaternionFinder:
     Body frame: +Z through nose, +X to right, +Y down (right‐handed).
     """
 
-    def __init__(self, mass: float, lqr=None, profile_csv: str = "cubic_sweep_profile.csv"):
+    def __init__(self, lqr=None, profile_csv: str = "cubic_sweep_profile.csv"):
         # Physical parameters & aerodynamic models
-        self.mass = mass
         self.lqr = lqr if lqr is not None else LQR()
 
         self.quat_error = []
@@ -70,48 +57,107 @@ class QuaternionFinder:
         # Load altitude->(pos,quat) profile
         self._load_lookup_table(profile_csv)
 
-    def compute_command_omega(self, rocket_pos: np.ndarray, rocket_quat: np.ndarray, side_effect:bool = False):
+        self.iter = 0
+        self.cur_ang = np.deg2rad(0)
+
+    def compute_command_omega(self, rocket_pos, rocket_quat, rocket_omega, inertia_matrix, side_effect = None):
+        """TAKE 2
+        step 1: detect lateral drift
+                find drift with location_exp - location_current
+
+                use a k value to tune how aggressive to treat the drift (correction vector = -k * drift)
+
+                determine desire_thrust in world frame (cor[0], cor[1], 1.0) and normalize
+
+                compute rotation axis using cross product of body forward frame and desired thrust in world frame, normalize
+                        if axis is super-small, vehicle is already aligned so q_des = [0,0,0,1]
+                        otherwise find angle (radians) using dot product of bodyframe, thrust_world
+                        q_desired is rotation vector to quat of axis * angle
+
+                        pass to attitude error
+
+
+        step 2: detect attitude drift
+        need to determine: what to feed into the LQR to get the torque requirement
+            attitude error [radx rady radz, wx, wy, wz]
+
+            determine attitude error:
+                q_desired rotation matrix * inv of q_current rotation matrix
+                and then rotate back to quat and only take first 3 values (we don't want q_w)
+
+            combine current w with q_error
+
+            combine these to form 6 item array (6,)
+
+            pass to lqr
         """
-         1) Get desired position and quaternion
-         2) Compute attitude error q_err
-         3) Call LQR for q_dot
-         4) Invert kinematics -> omega_cmd
-        """
-        # Get expected trajectory components
         alt_m = rocket_pos[2]
-        pos_des, _ = self.get_pose_by_altitude(alt=alt_m)
-        pos_future, _ = self.get_pose_by_altitude(alt=alt_m+10)
+        k = 0.5
 
-        tangent = pos_future - pos_des
-        tangent = self._safe_normalize(tangent)
-        # if side_effect:
-        #     print(f" {np.round(pos_des, 3)} || {np.round(pos_future, 3)} || {np.round(tangent, 3)}")
-            # print(np.round(tangent,3))
+        # =================== #
+        # -- LATERAL DRIFT -- #
+        # =================== #
 
-        att_des = self._rotation_between_vectors(np.array([0,0,1]), tangent)
+        # Direction of up on the rocket (through the nose cone)
+        body_frame = np.array([0.0, 0.0, 1.0])
 
-        # Determine attitude error: q_err = q_body^-1 (quat-mult) q_des
-        q_err = self._quat_mult(self._quat_conj(rocket_quat), att_des)
-        q_err[3] = 0
-        q_err = self._align_sign(self._safe_normalize(q_err))
+        target_pos, target_quat = self.get_pose_by_altitude(alt=alt_m)
 
-        # Determine lateral drift error (only worry about XY)
-        pos_err2d = pos_des[:2] - rocket_pos[:2]
+        drift = target_pos - rocket_pos
+        corr_v = -k * drift
 
-        # Get qdot from lqr
-        q_dot = self.lqr.get_Qdot(q_err=q_err, pos_err2d=pos_err2d)
+        if np.linalg.norm(corr_v) > 1e-6:
+            corr_v /= np.linalg.norm(corr_v)
+        else:
+            corr_v = np.zeros_like(corr_v)
 
-        # get omega w_cmd = 2·vec( q_dot ⊗ q_body⁻¹ )
-        omega_cmd = 2.0 * self._quat_mult(q_dot, self._quat_conj(rocket_quat))[:3]
-        omega_cmd[2] = 0
-        if side_effect:
-            self.pos_error.append(pos_err2d)
-            self.quat_error.append(q_err)
-            # print(f"COMPUTED: {np.round(omega_cmd,3)}")
+        desired_thrust_world = np.array([
+            corr_v[0],
+            corr_v[1],
+            1.0
+        ])
+        desired_thrust_world /= np.linalg.norm(desired_thrust_world)
 
-        return omega_cmd, q_err, pos_err2d
+        rotation_axis = np.linalg.cross(body_frame, desired_thrust_world)
+
+        if np.linalg.norm(rotation_axis) < 1e-8:
+            q_drift = np.array([0.0, 0.0, 0.0, 1.0])
+        else:
+            angle = np.arccos(np.clip(np.dot(body_frame, desired_thrust_world), -1.0, 1.0))
+            q_drift = R.from_rotvec(rotvec=(rotation_axis * angle)).to_quat()
+
+        # ===================== #
+        # -- TARGET ATTITUDE -- #
+        # ===================== #
+
+        q_target = R.from_quat(quat=target_quat)
+
+        # -- ROTATION -- #
+        q_current = R.from_quat(quat=rocket_quat)
+        q_desired = q_drift * q_target
+
+        q_err = q_desired * q_current.inv()
+        q_err_v = q_err.as_quat()[:3]
+
+        x_lqr = np.concatenate([q_err_v, rocket_omega])
+
+        torque = self.lqr.get_torque(x=x_lqr, inertia_matrix=inertia_matrix)
+
+        return torque
+
+
+
+
+
+
+
+
+
+
 
     # --- Lookup Trajectories ---------------------------------------------------
+
+
 
     def _load_lookup_table(self, csv_path: str):
         df = pd.read_csv(csv_path)
@@ -129,6 +175,13 @@ class QuaternionFinder:
         """
         Returns (pos, quat) at the given altitude via cubic interpolation.
         """
+        # if self.iter == 800:
+        #     self.cur_ang += np.deg2rad(90)
+        #     self.iter = 0
+        # quat = np.array([0, 0, np.sin(self.cur_ang/2), np.cos(self.cur_ang/2)])
+        # self.iter += 1
+        #
+        # return np.array([0,0,alt]), quat
         try:
             # p=1/0
             pos = np.array([ self._ix(alt),
@@ -143,6 +196,9 @@ class QuaternionFinder:
             pos = np.array([0,0,alt])
             quat = np.array([0,0,0,1])
             return pos, quat
+
+
+
 
     def _rotation_between_vectors(self, v0: np.ndarray, v1: np.ndarray) -> np.ndarray:
         axis = np.cross(v0, v1)

@@ -12,22 +12,13 @@ class TVCStructure:
     """
 
     def __init__(self,
-                 lqr_controller: object,
                  structure_model: object,
-                 aero_model: object,
-                 trajectory_csv: str = "cubic_sweep_profile.csv"):
+                 aero_model: object,):
         self.struct = structure_model
         self.aero   = aero_model
         self.height = self.struct.length
 
-        self.r_inertia = self.struct.I[2]
         self.p_y_inertia = self.struct.I[0]
-
-        self.quaternion = QuaternionFinder(
-            mass=self.struct.mass_current,
-            lqr=lqr_controller,
-            profile_csv=trajectory_csv
-        )
 
         # State
         self.thrust = 0.0
@@ -53,103 +44,14 @@ class TVCStructure:
         self.I_pitchyaw = self.struct.pitch_yaw_inertia
 
 
-    def _compute_gimbal_orientation(self,
-                                   time: float,
-                                   dt: float,
-                                   rocket_pos: np.ndarray,
-                                   rocket_quat: np.ndarray,
-                                   side_effect: bool = False):
+    def compute_gimbal_orientation_using_torque(self):
         """
-        1) ω_cmd via QuaternionFinder
-        2) map ω_cmd → raw gimbal angles
-        3) clamp angles, apply first‐order filter & rate limits
-        4) update cumulative gimbal_orientation (Rotation)
+        Computes gimbal angle using torque commands computed by the LQR
+        :return:
         """
-        # Reset if no thrust
-        if self.thrust <= 0.0:
-            self.theta_x    = 0.0
-            self.theta_y    = 0.0
-            self.d_theta_x  = 0.0
-            self.d_theta_y  = 0.0
-            return np.zeros(3)
 
-        # =================== #
-        # -- OMEGA COMMAND -- #
-        # =================== #
-
-        omega_cmd, q_err, pos_err       = self.quaternion.compute_command_omega(
-            rocket_pos=rocket_pos, rocket_quat=rocket_quat, side_effect=side_effect)
-
-        # if side_effect:
-        #     print(f"[{time:.2f}s] ω_cmd = {omega_cmd}")
-
-        # ======================= #
-        # -- GIMBAL CORRECTION -- #
-        # ======================= #
-
-        # Determine the raw angle changes
-        gain            = self.struct.I[0] / (self.thrust * (self.height - self.struct.cm_current))
-        theta_x_raw     = gain * omega_cmd[0]
-        theta_y_raw     = gain * omega_cmd[1]
-
-        # if abs(q_err[2]) < 1e-3:  # replace [2] with whatever index holds your roll‑error
-        #     theta_x_raw = 0.0  # zero out nozzle roll if no roll error
-
-        # gate roll unless there’s roll error (q_err_x)
-        if abs(q_err[0]) < 1e-3:
-            theta_x_raw = 0.0
-
-        # gate pitch unless there’s pitch error (q_err_y)
-        if abs(q_err[1]) < 1e-3:
-            theta_y_raw = 0.0
-
-        # Clamp to physical gimbal limits
-        theta_x_raw     = np.clip(theta_x_raw, -self.max_angle, self.max_angle)
-        theta_y_raw     = np.clip(theta_y_raw, -self.max_angle, self.max_angle)
-
-        # Pass through first order filter and rate limit
-        alpha           = dt / (self.gimbal_tau + dt)
-        tx_filt         = (1-alpha)*self.theta_x + alpha*theta_x_raw
-        ty_filt         = (1-alpha)*self.theta_y + alpha*theta_y_raw
-        dtx             = np.clip(tx_filt - self.theta_x, -self.max_rate*dt, self.max_rate*dt)
-        dty             = np.clip(ty_filt - self.theta_y, -self.max_rate*dt, self.max_rate*dt)
-
-        # ================== #
-        # -- STORE ANGLES -- #
-        # ================== #
-
-        self.theta_x    += dtx
-        self.theta_y    += dty
-        self.d_theta_x  = dtx / dt
-        self.d_theta_y  = dty / dt
-
-        # =================== #
-        # -- UPDATE GIMBAL -- #
-        # =================== #
-
-        sx = np.sin(self.theta_x)
-        cx = np.cos(self.theta_x)
-        sy = np.sin(self.theta_y)
-        cy = np.cos(self.theta_y)
-        thrust_dir_body = np.array([
-            - sy,  # X‐component from pitch
-            + sx,  # Y‐component from roll
-            cx * cy  # Z‐component
-        ])
-
-        if side_effect:
-            self.gimbal_log.append([np.rad2deg(self.theta_x), np.rad2deg(self.theta_y)])
-            # print( np.round(np.rad2deg(self.theta_x),2), np.round(np.rad2deg(self.theta_y),2), np.round(omega_cmd,2))
-            # print(self.gimbal_orientation)
-
-        return thrust_dir_body
-
-    def compute_gimbal_orientation(self,
-                                   time: float,
-                                   dt: float,
-                                   rocket_pos: np.ndarray,
-                                   rocket_quat: np.ndarray,
-                                   side_effect: bool = False) -> R:
+    def compute_gimbal_orientation_using_omega(self, time: float, dt: float, omega_cmd: np.ndarray,
+                                   q_err: np.ndarray, side_effect: bool = False) -> R:
         """
         1) ω_cmd via QuaternionFinder
         2) map ω_cmd → raw gimbal angles
@@ -168,8 +70,7 @@ class TVCStructure:
         # -- OMEGA COMMAND -- #
         # =================== #
 
-        omega_cmd, q_err, pos_err       = self.quaternion.compute_command_omega(
-            rocket_pos=rocket_pos, rocket_quat=rocket_quat, side_effect=side_effect)
+        omega_cmd = omega_cmd
 
         # if side_effect:
         #     print(f"[{time:.2f}s] ω_cmd = {omega_cmd}")
@@ -226,7 +127,7 @@ class TVCStructure:
 
         if side_effect:
             self.gimbal_log.append([np.rad2deg(self.theta_x), np.rad2deg(self.theta_y)])
-            print( np.round(np.rad2deg(self.theta_x),2), np.round(np.rad2deg(self.theta_y),2), np.round(omega_cmd,2))
+            # print( np.round(np.rad2deg(self.theta_x),2), np.round(np.rad2deg(self.theta_y),2), np.round(omega_cmd,2))
             # print(self.gimbal_orientation)
 
         return self.gimbal_orientation
@@ -237,5 +138,96 @@ class TVCStructure:
         :param thrust: current effective thrust [N]
         """
         self.thrust = thrust
-        self.r_inertia = self.struct.roll_inertia
         self.p_y_inertia = self.struct.pitch_yaw_inertia
+
+
+
+
+class FinTab:
+    def __init__(self, rocket_position: np.ndarray):
+        """Controls roll authority through the x-axis using fin tabs"""
+
+        # Location of the fin wrt the center of gravity
+        self.location = rocket_position
+        # Depicts the direction of the forces acting on the component using cross product and normalization
+        force_direction = np.linalg.cross(np.array([0, 0, 1]), rocket_position)
+        self.force_direction = force_direction / np.linalg.norm(force_direction)
+
+        self.radial_distance = rocket_position[0] if rocket_position[0] != 0 else rocket_position[1]
+        self.tab_theta  = 0
+        self.dtheta = 0
+        self.previous_theta = 0
+        self.area       = 0.0045
+        self.max_tab_angle = np.deg2rad(15)
+        self.max_dtheta = np.deg2rad(750)     # Maximum dtheta per second
+
+    def update_tab_angle(self, angle: float):
+        """Updates the tab angle of a given fin control surface"""
+        self.tab_angle = angle
+
+class RollControl:
+    def __init__(self, fins: list, struct: object):
+        """
+        Handles all fins
+        :param: List of fins [px, nx, py, ny]
+        """
+        self.fins = fins
+        self.struct = struct
+
+    def update_fin_angles(self, tab: FinTab, angle: float):
+        """
+        Updates tab angle
+        [rads]
+        :param tab: Tab object
+        :param angle: Angle [rad]
+        """
+        tab.tab_theta = angle
+
+
+    def calculate_theta(self, omega_cmd: np.ndarray, rho: float, vel: np.ndarray, dt: float):
+        """
+        Function to determine the tab angles to attain a specific roll rate
+        :param omega_cmd: Omega command determined from LQR [x y z]
+        :param rho: Density at current altitude [kg/m3]
+        :param vel: Velocity of air in body frame [x y z]
+        :param dt: Time step [s]
+        :return: x_theta, -x_theta, y_theta, -y_theta
+        """
+        r_list = []
+        roll_i = self.struct.I[2]
+        vel_mag = np.linalg.norm(vel)
+
+        for x in self.fins:
+            if vel_mag > 0:
+                theta_target_raw = (roll_i * omega_cmd[2]) / (4 * rho * vel_mag**2 * x.area * np.pi * x.radial_distance)
+
+                # Clip to maximum angle
+                theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)
+
+                # Ensure dtheta !> max dtheta
+                dtheta = (theta_target_raw_clipped - x.tab_theta) / dt
+
+                if abs(dtheta) > x.max_dtheta:
+                    # If exceeds rate
+                    dtheta = x.max_dtheta * dt
+                    theta_target_raw_clipped = x.tab_theta + dtheta
+                x.previous_theta = x.tab_theta
+                x.dtheta = dtheta
+                self.update_fin_angles(x, theta_target_raw_clipped)
+
+                r_list.append(x.tab_theta)
+
+            else:
+                r_list.append(x.tab_theta)
+
+        return r_list[0], r_list[1], r_list[2], r_list[3]
+
+
+
+
+
+
+
+
+
+

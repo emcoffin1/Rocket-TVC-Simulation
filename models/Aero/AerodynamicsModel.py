@@ -12,7 +12,7 @@ https://ntrs.nasa.gov/api/citations/20220007178/downloads/Free_flight_of_MPCV.pd
 import matplotlib.pyplot as plt
 import numpy as np
 class Aerodynamics:
-    def __init__(self, air):
+    def __init__(self, air: object):
         # -- Initialize other models -- #
         self.air = air
 
@@ -51,3 +51,30 @@ class Aerodynamics:
         drag = 0.5 * self.air.rho * vel ** 2 * cd * 0.0545
         return drag * drag_direction
 
+
+    def getLiftForce(self, vel_ms, roll_tabs: object):
+        """
+        Determines the lift force in all 3 axis, that is to say that the
+        roll authority will be handled within the return array
+
+        A negative deflection angle will result in a positive torque
+
+        Uses a thin plate approximation of lift where Cl = 2*pi*theta
+
+        :param vel_ms: Velocity of wind in body frame m/s [x y z]
+        :param roll_tabs: Control tab angle [rad]
+        :returns: Lift force [x y z] [N]
+        """
+        v_mag = np.linalg.norm(vel_ms)
+        lift = []
+        for x in roll_tabs.fins:
+            if v_mag <= 0:
+                lift.append(np.zeros(3))
+            else:
+                cl = 2 * np.pi * x.tab_theta
+                # Scalar
+                lift_comp = 0.5 * self.air.rho * v_mag**2 * x.area * cl
+                # Multiplied to force direction identity
+                lift_value = lift_comp * x.force_direction
+                lift.append(np.array(lift_value))
+        return lift

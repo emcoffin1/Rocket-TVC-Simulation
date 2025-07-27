@@ -73,15 +73,14 @@ def quaternionDerivative(quat, omega):
 class Rocket:
     def __init__(self):
 
-        q = np.diag([1,1,1,1,1])
-        r = np.eye(3) * 0.25
+        q = np.diag([5,5,5,1,1])
+        r = np.eye(3) * 0.5
 
         # -- Constants -- #
         self.grav = EnvironmentalModels.GravityModel()
         self.cor = EnvironmentalModels.CoriolisModel()
         self.air = EnvironmentalModels.AirProfile()
         self.wind = EnvironmentalModels.WindProfile()       # Currently not implemented (monte-carlo style sims)
-        self.lqr = LQR(q=q, r=r)
 
         # -- Init Atmosphere -- #
         self.air.getCurrentAtmosphere(altitudes_m=0, time=0)
@@ -91,9 +90,23 @@ class Rocket:
         self.structure = StructuralModel(engine_class=self.engine, liquid_total_ratio=0.56425)
         self.aerodynamics = Aerodynamics(self.air)
         self.tvc = TVCStructure(
-            lqr_controller=self.lqr,
             structure_model=self.structure,
             aero_model=self.aerodynamics)
+
+        # -- TABS -- #
+        z_comp = self.structure.cm_current - self.structure.length
+        r_comp = 0.2032
+        self.pos_x_tab = FinTab(rocket_position=np.array([r_comp, 0, z_comp]))
+        self.neg_x_tab = FinTab(rocket_position=np.array([-r_comp, 0, z_comp]))
+        self.pos_y_tab = FinTab(rocket_position=np.array([0, r_comp, z_comp]))
+        self.neg_y_tab = FinTab(rocket_position=np.array([0, -r_comp, z_comp]))
+        self.fins = [self.pos_x_tab, self.neg_x_tab, self.pos_y_tab, self.neg_y_tab]
+        self.roll_control = RollControl(fins=self.fins, struct=self.structure)
+
+        # -- CONTROL -- #
+        self.lqr = LQR(q=q, r=r)
+        self.quaternion = QuaternionFinder(lqr=self.lqr)
+
 
         # -- States -- #
         self.state = np.array([
@@ -138,7 +151,7 @@ class Rocket:
         # -- FORCES -- #
         # ============ #
 
-        thrust_vector_body, drag_force_body, coriolis_force_body, total_force_global = self.getTotalForce(
+        thrust_vector_body, drag_force_body, coriolis_force_body, lift_force_body, total_force_global = self.getTotalForce(
             state=state, dt=dt, side_effect=side_effect)
 
         # ============================ #
@@ -171,20 +184,20 @@ class Rocket:
 
         # Torques T = r (cross) F
         torque_thrust   = np.linalg.cross(r_thrust, thrust_vector_body)
-        # torque_thrust = thrust_vector_body[0] * r_cp
         torque_drag     = np.linalg.cross(r_cp, drag_force_body)
         torque_coriolis = np.linalg.cross(r_cp, coriolis_force_body)
-        # torque_coriolis = np.zeros(3)
-        # torque_drag = np.zeros(3)
-        # torque_thrust = np.zeros(3)
-        torque_body_total = torque_thrust + torque_drag + torque_coriolis
+        torque_roll = np.zeros(3)
+        for f,x in zip(lift_force_body, self.roll_control.fins):
+            torque_roll += np.linalg.cross(x.location, f)
+
+        torque_body_total = torque_thrust + torque_drag + torque_coriolis + torque_roll
 
 
 
         # Angular acceleration
         # domega          = torque_body_total / self.structure.I
-        domega          = -torque_thrust / self.structure.I
-        domega = np.zeros(3)
+        domega          = (torque_thrust + torque_roll) / self.structure.I
+        # domega = np.zeros(3)
 
         if side_effect:
             # print(f"THRUST: {np.round(torque_thrust,2)} || DRAG: {np.round(torque_drag,2)} || CORIOLIS: {np.round(torque_coriolis,2)}")
@@ -310,12 +323,17 @@ class Rocket:
         # !pulls data from other objects, keep as function!
         self.tvc.update_variables_(thrust_mag)
 
+        omega_cmd, q_err, pos_err2d = self.quaternion.compute_command_omega(rocket_pos=pos, rocket_quat=quat,
+                                                                            inertia_matrix=self.structure.I,
+                                                                            rocket_omega=omega,
+                                                                            side_effect=side_effect)
+
         # Get updated gimbal orientation in body frame
         thrust_dir_body: R = self.tvc.compute_gimbal_orientation(
             time        = time,
             dt          = dt,
-            rocket_pos  = pos,
-            rocket_quat = quat,
+            omega_cmd   = omega_cmd,
+            q_err       = q_err,
             side_effect = side_effect
         )
 
@@ -330,13 +348,28 @@ class Rocket:
             self.thrust.append(thrust_force_global)
             # print(f"THRUST {np.round(thrust_force_global, 2)}")
 
+        # ================== #
+        # -- ROLL CONTROL -- #
+        # ================== #
+
+        # Get new tab angles (return for debug only, other definitions access objects directly)
+        x_theta, x__theta, y_theta, y__theta = self.roll_control.calculate_theta(omega_cmd=omega_cmd, rho=rho,
+                                                                                 vel=v_air_body, dt=dt)
+        # Returns a list of all tab forces
+        lift_force_body = self.aerodynamics.getLiftForce(vel_ms=v_air_body, roll_tabs=self.roll_control)
+
+        # Convert to body force after summing the arrays (should come to 0)
+        lift_force_global = R.from_quat(quat).apply(sum(lift_force_body))
+
+
         # ======================== #
         # -- TOTAL GLOBAL FORCE -- #
         # ======================== #
 
-        total_force_global = thrust_force_global + drag_force_global + gravity_force_global + coriolis_force_global
+        total_force_global = (thrust_force_global + drag_force_global + gravity_force_global +
+                              coriolis_force_global + lift_force_global)
 
-        return thrust_vector_body, drag_force_body, coriolis_force_body, total_force_global
+        return thrust_vector_body, drag_force_body, coriolis_force_body, lift_force_body, total_force_global
 
     def _initialize_vehicle(self):
         """A function to immediately display vehicle information on launch/initialization"""

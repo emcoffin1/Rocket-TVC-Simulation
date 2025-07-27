@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
     for _ in range(steps):
         # Unpack state
-        thrust_body, drag_body, coriolis_body, total_global = rocket.getTotalForce(state, dt, side_effect=False)
+        thrust_body, drag_body, coriolis_body, lift_body,total_global = rocket.getTotalForce(state, dt, side_effect=False)
         pos, vel, quat, omega, tvc_quat, mass, time, aoa, beta, gimbals = VehicleModels.unpackStates(state)
 
 
@@ -192,8 +192,8 @@ if __name__ == "__main__":
 
     # rocket.mfr.append(rocket.mfr[-1]+ 0.00000001)
     gimb = np.array(rocket.tvc.gimbal_log)
-    quat_er = np.array(rocket.tvc.quaternion.quat_error)
-    pos_er = np.array(rocket.tvc.quaternion.pos_error)
+    quat_er = np.array(rocket.quaternion.quat_error)
+    pos_er = np.array(rocket.quaternion.pos_error)
 
     plt.subplot(5, 1, 1)
     plt.plot(time_log[:-1], gimb)
@@ -201,17 +201,17 @@ if __name__ == "__main__":
     plt.grid(True)
 
     plt.subplot(5,1,2)
-    plt.plot(time_log[:-1], quat_er[:,0])
+    plt.plot(time_log, quat_er[:,0])
     plt.ylabel("Quat Error")
     plt.grid(True)
 
     plt.subplot(5,1,3)
-    plt.plot(time_log[:-1], pos_er[:,0])
+    plt.plot(time_log, pos_er[:,0])
     plt.ylabel("Pos Error")
     plt.grid(True)
 
     plt.subplot(5,1,4)
-    plt.plot(time_log, quat_log[:,:3])
+    plt.plot(time_log, quat_log)
     plt.ylabel("QUAT")
     plt.grid(True)
 
