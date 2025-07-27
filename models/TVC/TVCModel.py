@@ -55,8 +55,8 @@ class TVCStructure:
         # -- COMPUTE REQUIRED GIMBAL ANGLES -- #
         # ==================================== #
         if self.thrust > 1e-6:
-            theta_x_raw = -torque_body_cmd[1] / (self.thrust * lever)
-            theta_y_raw = torque_body_cmd[0] / (self.thrust * lever)
+            theta_x_raw = torque_body_cmd[1] / (self.thrust * lever)
+            theta_y_raw = -torque_body_cmd[0] / (self.thrust * lever)
         else:
             theta_x_raw = 0
             theta_y_raw = 0
@@ -85,8 +85,8 @@ class TVCStructure:
         self.d_theta_y = dty / dt
 
         # Update gimbal
-        r_step_x = R.from_rotvec(rotvec=[dtx, 0, 0])
-        r_step_y = R.from_rotvec(rotvec=[0, -dty, 0])
+        r_step_x = R.from_rotvec(rotvec=[0, -dtx, 0])
+        r_step_y = R.from_rotvec(rotvec=[dty, 0, 0])
         self.gimbal_orientation = (r_step_y * r_step_x) * self.gimbal_orientation
 
         if side_effect:
