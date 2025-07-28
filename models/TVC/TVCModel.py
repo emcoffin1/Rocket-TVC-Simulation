@@ -43,7 +43,8 @@ class TVCStructure:
         self.I_roll     = self.struct.roll_inertia
         self.I_pitchyaw = self.struct.pitch_yaw_inertia
 
-    def compute_gimbal_orientation_using_torque(self, torque_body_cmd: np.ndarray, dt: float, side_effect: bool = False):
+    def compute_gimbal_orientation_using_torque(self, torque_body_cmd: np.ndarray, dt: float, time:float,
+                                                side_effect: bool = False):
         """
         Computes gimbal angle using torque commands computed by the LQR
         theta = Torque (of opposite axis) / (Thrust * HEIGHT-CG)
@@ -55,7 +56,7 @@ class TVCStructure:
         # -- COMPUTE REQUIRED GIMBAL ANGLES -- #
         # ==================================== #
         if self.thrust > 1e-6:
-            theta_x_raw = -torque_body_cmd[1] / (self.thrust * lever)
+            theta_x_raw = torque_body_cmd[1] / (self.thrust * lever)
             theta_y_raw = -torque_body_cmd[0] / (self.thrust * lever)
         else:
             theta_x_raw = 0
@@ -89,100 +90,19 @@ class TVCStructure:
 
         # Update gimbal
         r_step_x = R.from_rotvec([0, dtx, 0])
-
         r_step_y = R.from_rotvec([dty, 0, 0])
 
-        self.gimbal_orientation = (r_step_y * r_step_x) * self.gimbal_orientation
+
+        # self.gimbal_orientation = (r_step_y * r_step_x) * self.gimbal_orientation
+
+        self.gimbal_orientation = (r_step_x * r_step_y) * self.gimbal_orientation
 
         if side_effect:
             self.gimbal_log.append([np.rad2deg(self.theta_x), np.rad2deg(self.theta_y)])
-
+            print(f"t: {round(time,2)} | GIMBAL X: {np.round(np.rad2deg(self.theta_x),3)} || Y: {np.round(np.rad2deg(self.theta_y),3)}")
         return self.gimbal_orientation
 
-    def compute_gimbal_orientation_using_omega(self, time: float, dt: float, omega_cmd: np.ndarray,
-                                   q_err: np.ndarray, side_effect: bool = False) -> R:
-        """
-        1) ω_cmd via QuaternionFinder
-        2) map ω_cmd → raw gimbal angles
-        3) clamp angles, apply first‐order filter & rate limits
-        4) update cumulative gimbal_orientation (Rotation)
-        """
-        # Reset if no thrust
-        if self.thrust <= 0.0:
-            self.theta_x    = 0.0
-            self.theta_y    = 0.0
-            self.d_theta_x  = 0.0
-            self.d_theta_y  = 0.0
-            return self.gimbal_orientation
 
-        # =================== #
-        # -- OMEGA COMMAND -- #
-        # =================== #
-
-        omega_cmd = omega_cmd
-
-        # if side_effect:
-        #     print(f"[{time:.2f}s] ω_cmd = {omega_cmd}")
-
-        # ======================= #
-        # -- GIMBAL CORRECTION -- #
-        # ======================= #
-
-        # Determine the raw angle changes
-        gain            = self.struct.I[0] / (self.thrust * (self.height - self.struct.cm_current))
-        theta_x_raw     = gain * omega_cmd[0]
-        theta_y_raw     = gain * omega_cmd[1]
-
-        # if abs(q_err[2]) < 1e-3:  # replace [2] with whatever index holds your roll‑error
-        #     theta_x_raw = 0.0  # zero out nozzle roll if no roll error
-
-        # # gate roll unless there’s roll error (q_err_x)
-        # if abs(q_err[0]) < 1e-3:
-        #     theta_x_raw = 0.0
-        #
-        # # gate pitch unless there’s pitch error (q_err_y)
-        # if abs(q_err[1]) < 1e-3:
-        #     theta_y_raw = 0.0
-
-        # Clamp to physical gimbal limits
-        theta_x_raw     = np.clip(theta_x_raw, -self.max_angle, self.max_angle)
-        theta_y_raw     = np.clip(theta_y_raw, -self.max_angle, self.max_angle)
-
-        # Pass through first order filter and rate limit
-        alpha           = dt / (self.gimbal_tau + dt)
-        tx_filt         = (1-alpha)*self.theta_x + alpha*theta_x_raw
-        ty_filt         = (1-alpha)*self.theta_y + alpha*theta_y_raw
-        dtx             = np.clip(tx_filt - self.theta_x, -self.max_rate*dt, self.max_rate*dt)
-        dty             = np.clip(ty_filt - self.theta_y, -self.max_rate*dt, self.max_rate*dt)
-
-        # ================== #
-        # -- STORE ANGLES -- #
-        # ================== #
-
-        self.theta_x    += dtx
-        self.theta_y    += dty
-        self.d_theta_x  = dtx / dt
-        self.d_theta_y  = dty / dt
-
-        # =================== #
-        # -- UPDATE GIMBAL -- #
-        # =================== #
-
-        # r_step_x        = R.from_rotvec(rotvec=[dtx, 0, 0])
-        # r_step_x        = R.from_rotvec(rotvec=[0, 0, 0])
-        # r_step_y        = R.from_rotvec(rotvec=[0, -dty, 0])
-
-        r_step_x        = R.from_rotvec(rotvec=[0, dtx, 0])
-        r_step_y        = R.from_rotvec(rotvec=[dty, 0, 0])
-        self.gimbal_orientation = (r_step_y * r_step_x) * self.gimbal_orientation
-
-
-        if side_effect:
-            self.gimbal_log.append([np.rad2deg(self.theta_x), np.rad2deg(self.theta_y)])
-            # print( np.round(np.rad2deg(self.theta_x),2), np.round(np.rad2deg(self.theta_y),2), np.round(omega_cmd,2))
-            # print(self.gimbal_orientation)
-
-        return self.gimbal_orientation
 
     def update_variables_(self, thrust: float):
         """

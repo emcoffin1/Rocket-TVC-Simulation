@@ -197,7 +197,8 @@ class Rocket:
             #     torque = f[0] * x.location[1]
 
             if side_effect and (time < 8.1):
-                print(f"LOCATION: {x.location} || FORCE: {np.round(f, 5)} || TORQUE: {torque}")
+                # print(f"LOCATION: {x.location} || FORCE: {np.round(f, 5)} || TORQUE: {torque}")
+                pass
 
             torque_roll += torque
 
@@ -223,7 +224,7 @@ class Rocket:
 
         if side_effect and (time < 8.1):
             # print(f"ROLL FORCE: {np.round(lift_force_body,5)}")
-            print(f"CALCULATED: {np.round(torque_body_total,5)}")
+            # print(f"CALCULATED: {np.round(torque_body_total,5)}")
             pass
 
 
@@ -364,7 +365,8 @@ class Rocket:
         thrust_dir_body: R = self.tvc.compute_gimbal_orientation_using_torque(
             torque_body_cmd=torque_cmd,
             dt=dt,
-            side_effect=side_effect
+            side_effect=side_effect,
+            time=time
         )
 
         # Apply gimbal rotation to thrust vector in body frame
@@ -416,9 +418,9 @@ class Rocket:
             # lat_thrust = np.linalg.norm(thrust_vector_body[:2] * thrust_mag)
             # print(f"Lateral thrust: {lat_thrust:.2f} N")
             # print(f"ROLL FORCE: {np.around(lift_force_body,2)}")
-            print(round(time,2), np.round(v_air_body, 2), round(np.rad2deg(x_theta), 4), round(np.rad2deg(x__theta), 4), round(np.rad2deg(y_theta), 4),
-                  round(np.rad2deg(y__theta), 4))
-            print(f"EXPECTED: {np.round(torque_cmd,5)}")
+            # print(round(time,2), np.round(v_air_body, 2), round(np.rad2deg(x_theta), 4), round(np.rad2deg(x__theta), 4), round(np.rad2deg(y_theta), 4),
+            #       round(np.rad2deg(y__theta), 4))
+            # print(f"EXPECTED: {np.round(torque_cmd,5)}")
 
             pass
 

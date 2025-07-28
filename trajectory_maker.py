@@ -227,7 +227,7 @@ def generate_pingpong_lookup_table(
     return df
 
 # Generate table and preview trajectory
-df = generate_pingpong_lookup_table()
+df = generate_cubic_sweep_tangent_table()
 
 # Plot trajectory for visual check
 fig = plt.figure(figsize=(10, 7))

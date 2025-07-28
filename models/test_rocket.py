@@ -284,4 +284,17 @@ if __name__ == "__main__":
     ax.grid(True)
 
     plt.tight_layout()
+    # Ensure equal scaling
+    x_min, x_max = ax.get_xlim()
+    y_min, y_max = ax.get_ylim()
+    z_min, z_max = ax.get_zlim()
+
+    # Find global min and max range
+    all_min = min(x_min, y_min)
+    all_max = max(x_max, y_max)
+
+    # Force equal aspect on X and Y by syncing their limits
+    ax.set_xlim(all_min, all_max)
+    ax.set_ylim(all_min, all_max)
+
     plt.show()

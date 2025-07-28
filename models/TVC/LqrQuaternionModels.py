@@ -28,41 +28,6 @@ class LQR:
         B = np.zeros((8, 3))
         B[3:6, :] = np.linalg.inv(inertia_matrix)
 
-
-        # print("=" * 60)
-        # print("A matrix:")
-        # print(A)
-        # print("Shape of A:", A.shape)
-        #
-        # print("\nB matrix:")
-        # print(B)
-        # print("Shape of B:", B.shape)
-        # print("=" * 60)
-        #
-        # print("Q matrix:")
-        # print(self.q)
-        # print("Shape of Q:", self.q.shape)
-        #
-        # print("\nR matrix:")
-        # print(self.r)
-        # print("Shape of R:", self.r.shape)
-        #
-        # # Check rank
-        # print("Rank of B:", np.linalg.matrix_rank(B))
-        # print("Rank of [A | B]:", np.linalg.matrix_rank(np.hstack([A, B])))
-        #
-        # # Check conditioning
-        # try:
-        #     cond_B = np.linalg.cond(B.T @ B)
-        #     print("Condition number of B.T @ B:", cond_B)
-        # except np.linalg.LinAlgError:
-        #     print("Failed to compute condition number for B.T @ B")
-        #
-        # print("Any NaNs in A?", np.isnan(A).any())
-        # print("Any Infs in A?", np.isinf(A).any())
-        # print("Any NaNs in B?", np.isnan(B).any())
-        # print("Any Infs in B?", np.isinf(B).any())
-
         P = solve_continuous_are(A, B, self.q, self.r)
         K = np.linalg.inv(self.r) @ B.T @ P
 
@@ -99,130 +64,6 @@ class QuaternionFinder:
 
         self.iter = 0
         self.cur_ang = np.deg2rad(0)
-
-    def _compute_command_torque(self, time, rocket_pos, rocket_quat, rocket_omega, rocket_vel,
-                               inertia_matrix, acc_mag, side_effect = None):
-        """TAKE 2
-        step 1: detect lateral drift
-                find drift with location_exp - location_current
-
-                use a k value to tune how aggressive to treat the drift (correction vector = -k * drift)
-
-                determine desire_thrust in world frame (cor[0], cor[1], 1.0) and normalize
-
-                compute rotation axis using cross product of body forward frame and desired thrust in world frame, normalize
-                        if axis is super-small, vehicle is already aligned so q_des = [0,0,0,1]
-                        otherwise find angle (radians) using dot product of bodyframe, thrust_world
-                        q_desired is rotation vector to quat of axis * angle
-
-                        pass to attitude error
-
-
-        step 2: detect attitude drift
-        need to determine: what to feed into the LQR to get the torque requirement
-            attitude error [radx rady radz, wx, wy, wz]
-
-            determine attitude error:
-                q_desired rotation matrix * inv of q_current rotation matrix
-                and then rotate back to quat and only take first 3 values (we don't want q_w)
-
-            combine current w with q_error
-
-            combine these to form 6 item array (6,)
-
-            pass to lqr
-        """
-        alt_m = rocket_pos[2]
-
-        # ================== #
-        # -- DESIRED PATH -- #
-        # ================== #
-
-        target_pos, target_quat = self.get_pose_by_altitude(alt=alt_m)
-        target_pos_future, _ = self.get_pose_by_altitude(alt=alt_m + 10.0)
-
-        # Position and velocity error
-        drift_pos = target_pos - rocket_pos
-        drift_vel = (target_pos_future - target_pos)
-        drift_vel /= np.linalg.norm(drift_vel) + 1e-8
-
-        # Estimate expected speed
-        expected_speed = np.linalg.norm(rocket_vel)
-        desired_vel = drift_vel * expected_speed
-        vel_err = desired_vel - rocket_vel
-
-        # ========================= #
-        # -- DESIRED ACCEL VECTOR --#
-        # ========================= #
-
-        k_pos = 0.05  # Tune these
-        k_vel = 0.5
-
-        desired_acc = k_pos * drift_pos + k_vel * vel_err
-        desired_acc[2] += acc_mag  # Add vertical thrust compensation (optional)
-
-        if np.linalg.norm(desired_acc) > 1e-5:
-            thrust_dir = desired_acc / np.linalg.norm(desired_acc)
-        else:
-            thrust_dir = np.array([0, 0, 1.0])  # Default to up
-
-        # ============== #
-        # -- ROTATION -- #
-        # ============== #
-
-        # Rotate rocket +Z to desired thrust direction
-        body_z = np.array([0, 0, 1])
-        axis = np.cross(body_z, thrust_dir)
-        angle = np.arccos(np.clip(np.dot(body_z, thrust_dir), -1.0, 1.0))
-
-        if np.linalg.norm(axis) < 1e-6:
-            q_drift = R.from_quat([0, 0, 0, 1])
-        else:
-            axis_normalized = axis / np.linalg.norm(axis)
-            q_drift = R.from_rotvec(axis_normalized * angle)
-
-        # Target orientation from trajectory
-        q_target = R.from_quat(target_quat)
-        q_desired = q_drift * q_target
-        q_current = R.from_quat(rocket_quat)
-        q_err = q_desired * q_current.inv()
-
-        q_err_v = q_err.as_quat()[:3]
-
-        # State vector: [attitude error, angular velocity, lateral velocity error]
-        x_lqr = np.concatenate([q_err_v, rocket_omega, vel_err[:2]])
-
-        torque = self.lqr.get_torque(x=x_lqr, inertia_matrix=inertia_matrix, acc_mag=acc_mag)
-
-        if side_effect:
-            print(f"EXPECTED TORQUE: {np.round(torque, 2)}")
-            # print(f"DRIFT: {np.round(drift,2)}")
-            self.quat_error.append(q_err)
-            self.pos_error.append(q_drift)
-            pass
-
-        if side_effect and (8.0 < time < 8.1):
-            # print(f"EXPECTED TORQUE: {np.round(torque,2)}")
-            # print(f"q_err: {q_err.as_quat()}")
-            # print(f"x_lqr: {x_lqr}")
-            # print(f"Torque cmd: {torque}")
-            # print(f"Drift: {q_drift}, Drift vel err: {vel_err}")
-            # nose_vec = R.from_quat(rocket_quat).apply([0, 0, 1])  # +Z in body
-            # trajectory_vec = target_pos_future - target_pos
-            # trajectory_vec /= np.linalg.norm(trajectory_vec)
-            #
-            # alignment_error = np.arccos(np.clip(np.dot(nose_vec, trajectory_vec), -1.0, 1.0))
-            # print(f"Alignment angle error: {np.degrees(alignment_error):.2f} deg")
-            #
-            # dir_trajectory = normalize(target_pos_future - target_pos)
-            # e_xy = pos_des[:2] - rocket_pos[:2]
-            # corr_vec = k_pos * normalize(np.array([e_xy[0], e_xy[1], 0.0]))  # No vertical drift correction
-            # blended_dir = normalize(dir_trajectory + corr_vec)
-            # dot = np.dot(nose_vec, blended_dir)
-            # print(f"Thrust alignment cosine: {dot:.6f}, angle: {np.degrees(np.arccos(dot)):.2f}°")
-            pass
-
-        return torque
 
 
     def compute_command_torque(self, time, rocket_pos, rocket_quat, rocket_omega, rocket_vel,
@@ -265,10 +106,11 @@ class QuaternionFinder:
         # ================== #
 
         target_pos, target_quat = self.get_pose_by_altitude(alt=alt_m)
-        target_pos_future, _ = self.get_pose_by_altitude(alt=alt_m + 10.0)
+        target_pos_future, _ = self.get_pose_by_altitude(alt=alt_m + 2.0)
 
         # Position and velocity error
-        drift_pos = target_pos - rocket_pos
+        # drift_pos = target_pos - rocket_pos
+        drift_pos  = rocket_pos - target_pos
         drift_vel = (target_pos_future - target_pos)
         drift_vel /= np.linalg.norm(drift_vel) + 1e-8
 
@@ -345,7 +187,17 @@ class QuaternionFinder:
 
         if side_effect:
             # print(f"EXPECTED: {np.round(torque,2)}")
+            # print(f"DEV: {np.round(drift_pos,3)}")
+            print(f"CUR: {np.round(rocket_pos,2)} || EXP: {np.round(target_pos,2)} || ERR: DEV: {np.round(drift_pos,3)}")
+            print(f"EXPECTED TORQUE: {np.round(torque,3)}")
+            # print(f"EXPECTED: {np.round(target_pos, 2)}")
+            # print(f"ACTUAL:   {np.round(rocket_pos, 2)}")
             pass
+
+        if side_effect and torque[1] > 1e-5:
+            # print(round(time,2), torque[1])
+            pass
+
 
         return torque
 
