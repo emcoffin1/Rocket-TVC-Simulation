@@ -234,11 +234,20 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
+    for x in rocket.roll_control.angles:
+        print(x[0], x[1], x[2], x[3])
+    plt.plot(rocket.roll_control.angles[0], label="+x")
+    plt.plot(rocket.roll_control.angles[1],label="-x")
+    plt.plot(rocket.roll_control.angles[2],label="+y")
+    plt.plot(rocket.roll_control.angles[3],label="-y")
+    plt.tight_layout()
+    plt.legend()
+    plt.show()
 
 
     # Load once
     PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-    filename = os.path.join(PROJECT_ROOT, "TVC/cubic_sweep_profile.csv")
+    filename = os.path.join(PROJECT_ROOT, "TVC/missile_pingpong_profile.csv")
     df = pd.read_csv(filename)
 
     # Build interpolators

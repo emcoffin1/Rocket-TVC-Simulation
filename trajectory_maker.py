@@ -161,8 +161,73 @@ def generate_cubic_sweep_tangent_table(
     return df
 
 
+def generate_pingpong_lookup_table(
+        filename: str = 'missile_pingpong_profile.csv',
+        num_points: int = 10000,
+        max_altitude: float = 10000.0,
+        lateral_shift_m: float = 25.0,
+        pitch_interval_m: float = 200.0
+) -> pd.DataFrame:
+    """
+    Generate a vertical climb profile with horizontal X-axis ping-pong
+    motion every `pitch_interval_m` of vertical gain.
+
+    The rocket alternates between +X and –X by `lateral_shift_m`, creating
+    a zig-zag pattern. Orientation is adjusted to face the current direction.
+
+    Columns:
+      z   – altitude [m]
+      x,y – horizontal position (zero y)
+      qx,qy,qz,qw – body‑to‑world quaternion (x, y, z, w)
+    """
+    # Altitude grid
+    z_vals = np.linspace(0.0, max_altitude, num_points)
+
+    # Ping-pong state (alternating every N meters of altitude)
+    segment = np.floor(z_vals / pitch_interval_m).astype(int)
+    x_vals = ((segment % 2) * 2 - 1) * lateral_shift_m  # +50, -50, +50, ...
+    y_vals = np.zeros_like(x_vals)
+
+    # Heading direction: compute unit vector from previous to current point
+    dx = np.gradient(x_vals)
+    dy = np.gradient(y_vals)
+    dz = np.gradient(z_vals)
+
+    directions = np.vstack([dx, dy, dz]).T
+    directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+
+    # Rocket default forward axis is +X, so compute rotation from +X to direction
+    body_forward = np.array([1.0, 0.0, 0.0])
+    quats = []
+
+    for d in directions:
+        # Avoid NaN rotation if d is degenerate
+        if np.linalg.norm(d) < 1e-6:
+            quat = [0, 0, 0, 1]
+        else:
+            rot = R.from_rotvec(np.cross(body_forward, d))
+            quat = rot.as_quat()
+        quats.append(quat)
+
+    quats = np.array(quats)  # [N x 4] in (x, y, z, w) order
+
+    # Final output
+    df = pd.DataFrame({
+        'z': z_vals,
+        'x': x_vals,
+        'y': y_vals,
+        'qx': quats[:, 0],
+        'qy': quats[:, 1],
+        'qz': quats[:, 2],
+        'qw': quats[:, 3],
+    })
+
+    df.to_csv(filename, index=False)
+    print(f"✅ Ping-pong trajectory saved to '{filename}'")
+    return df
+
 # Generate table and preview trajectory
-df = generate_cubic_sweep_tangent_table()
+df = generate_pingpong_lookup_table()
 
 # Plot trajectory for visual check
 fig = plt.figure(figsize=(10, 7))

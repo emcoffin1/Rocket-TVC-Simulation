@@ -87,7 +87,7 @@ class QuaternionFinder:
     Body frame: +Z through nose, +X to right, +Y down (right‐handed).
     """
 
-    def __init__(self, lqr=None, profile_csv: str = "cubic_sweep_profile.csv"):
+    def __init__(self, lqr=None, profile_csv: str = "missile_pingpong_profile.csv"):
         # Physical parameters & aerodynamic models
         self.lqr = lqr if lqr is not None else LQR()
 
@@ -195,7 +195,7 @@ class QuaternionFinder:
         torque = self.lqr.get_torque(x=x_lqr, inertia_matrix=inertia_matrix, acc_mag=acc_mag)
 
         if side_effect:
-            # print(f"EXPECTED TORQUE: {np.round(torque, 2)}")
+            print(f"EXPECTED TORQUE: {np.round(torque, 2)}")
             # print(f"DRIFT: {np.round(drift,2)}")
             self.quat_error.append(q_err)
             self.pos_error.append(q_drift)
@@ -207,19 +207,20 @@ class QuaternionFinder:
             # print(f"x_lqr: {x_lqr}")
             # print(f"Torque cmd: {torque}")
             # print(f"Drift: {q_drift}, Drift vel err: {vel_err}")
-            nose_vec = R.from_quat(rocket_quat).apply([0, 0, 1])  # +Z in body
-            trajectory_vec = target_pos_future - target_pos
-            trajectory_vec /= np.linalg.norm(trajectory_vec)
-
-            alignment_error = np.arccos(np.clip(np.dot(nose_vec, trajectory_vec), -1.0, 1.0))
-            print(f"Alignment angle error: {np.degrees(alignment_error):.2f} deg")
-
-            dir_trajectory = normalize(target_pos_future - target_pos)
-            e_xy = pos_des[:2] - rocket_pos[:2]
-            corr_vec = k_pos * normalize(np.array([e_xy[0], e_xy[1], 0.0]))  # No vertical drift correction
-            blended_dir = normalize(dir_trajectory + corr_vec)
-            dot = np.dot(nose_vec, blended_dir)
-            print(f"Thrust alignment cosine: {dot:.6f}, angle: {np.degrees(np.arccos(dot)):.2f}°")
+            # nose_vec = R.from_quat(rocket_quat).apply([0, 0, 1])  # +Z in body
+            # trajectory_vec = target_pos_future - target_pos
+            # trajectory_vec /= np.linalg.norm(trajectory_vec)
+            #
+            # alignment_error = np.arccos(np.clip(np.dot(nose_vec, trajectory_vec), -1.0, 1.0))
+            # print(f"Alignment angle error: {np.degrees(alignment_error):.2f} deg")
+            #
+            # dir_trajectory = normalize(target_pos_future - target_pos)
+            # e_xy = pos_des[:2] - rocket_pos[:2]
+            # corr_vec = k_pos * normalize(np.array([e_xy[0], e_xy[1], 0.0]))  # No vertical drift correction
+            # blended_dir = normalize(dir_trajectory + corr_vec)
+            # dot = np.dot(nose_vec, blended_dir)
+            # print(f"Thrust alignment cosine: {dot:.6f}, angle: {np.degrees(np.arccos(dot)):.2f}°")
+            pass
 
         return torque
 
@@ -256,8 +257,6 @@ class QuaternionFinder:
 
             pass to lqr
         """
-        import numpy as np
-        from scipy.spatial.transform import Rotation as R
 
         def normalize(v):
             norm = np.linalg.norm(v)
@@ -316,7 +315,8 @@ class QuaternionFinder:
 
         # Target orientation from trajectory
         q_target = R.from_quat(target_quat)
-        q_desired = q_drift * q_target
+        # q_desired = q_drift * q_target
+        q_desired = q_target * q_drift
         q_current = R.from_quat(rocket_quat)
         q_err = q_desired * q_current.inv()
 
@@ -332,6 +332,8 @@ class QuaternionFinder:
             self.pos_error.append(q_drift)
 
         if side_effect and (8.0 < time < 8.1):
+
+            print(f"EXPECTED: {np.round(torque,2)}")
             # nose_vec = R.from_quat(rocket_quat).apply([0, 0, 1])  # +Z in body
             # trajectory_vec = target_pos_future - target_pos
             # trajectory_vec /= np.linalg.norm(trajectory_vec)

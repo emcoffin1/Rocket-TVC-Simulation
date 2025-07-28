@@ -182,14 +182,21 @@ class Rocket:
         r_thrust = np.array([0.0, 0.0, self.structure.length - self.structure.cm_current])
 
         # Torques T = r (cross) F
-        torque_thrust = np.linalg.cross(r_thrust, thrust_vector_body)
-        # torque_thrust = np.linalg.cross(thrust_vector_body, r_thrust)
+        # torque_thrust = np.linalg.cross(r_thrust, thrust_vector_body)
+        torque_thrust = np.linalg.cross(thrust_vector_body, r_thrust)
         torque_drag = np.linalg.cross(r_cp, drag_force_body)
         torque_coriolis = np.linalg.cross(r_cp, coriolis_force_body)
         torque_roll = np.zeros(3)
         for f, x in zip(lift_force_body, self.roll_control.fins):
-            torque = np.linalg.cross(x.location, f)
-            print(f"Location: {x.name}, Force: {f}, Torque: {torque}")
+            # torque = np.linalg.cross(x.location, f)
+            # # print(f"Location: {x.name}, Force: {f}, Torque: {torque}")
+            #
+            # if side_effect and (8.0 < time < 8.1):
+            #     print(f"LOCATION: {x.location} || FORCE: {np.round(f,2)} || TORQUE: {torque}")
+            if x.location[0] != 0:
+                torque = f[1] * x.location[0]
+            else:
+                torque = f[0] * x.location[1]
             torque_roll += torque
 
         torque_body_total = torque_thrust + torque_drag + torque_coriolis + torque_roll
@@ -207,14 +214,15 @@ class Rocket:
             # print(f"THRUST BODY: {np.round(thrust_vector_body,1)} || TORQUE BODY: {np.round(torque_thrust,2)} || TORQUE EARTH: {np.round(R.from_quat(quat).apply(torque_thrust),2)}")
             # print(f"ACTUAL: {domega[1]*dt}")
             # print(np.round(pos,2))
-            # print(f"ACTUAL TORQUE: {np.round(torque_thrust+torque_roll, 2)}")
+            # print(f"ACTUAL TORQUE: {np.round(torque_thrust, 2)}")
             # print(f"DEFLECTED THRUST {np.round(thrust_vector_body,2)}")
             # print(f"ACTUAL: {np.round(torque_roll, 2)}")
             pass
 
-        # if side_effect and (8.0 < time < 8.1):
-        #     print(f"ACTUAL: {np.round(torque_roll + torque_thrust, 2)}")
-        #     pass
+        if side_effect and (8.0 < time < 8.1):
+            print(f"ACTUAL: {np.round(torque_thrust, 2)}")
+            # print(f"ROLL FORCE: {np.round(lift_force_body,5)}")
+            pass
 
         # if side_effect and (8.0 < time < 8.1):
         #     print(f"CALC TORQUE: {np.round(torque_thrust + torque_roll,2)}")
@@ -388,6 +396,10 @@ class Rocket:
             # np.round(lift_force_body[1],2),
             # np.round(lift_force_body[2],2),
             # np.round(lift_force_body[3],2),}  ||  GLOBAL: {np.round(lift_force_global,2)}")
+            # print(round(time,2),round(np.degrees(x_theta), 2), round(np.degrees(x__theta), 2), round(np.degrees(y_theta), 2),
+            #       round(np.degrees(y__theta), 2))
+
+
             pass
         # ======================== #
         # -- TOTAL GLOBAL FORCE -- #
@@ -402,6 +414,7 @@ class Rocket:
             # print("Thrust (global):", thrust_force_global / np.linalg.norm(thrust_force_global))
             # lat_thrust = np.linalg.norm(thrust_vector_body[:2] * thrust_mag)
             # print(f"Lateral thrust: {lat_thrust:.2f} N")
+            # print(f"ROLL FORCE: {np.around(lift_force_body,2)}")
 
             pass
 

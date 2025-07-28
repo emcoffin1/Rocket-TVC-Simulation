@@ -55,7 +55,7 @@ class TVCStructure:
         # -- COMPUTE REQUIRED GIMBAL ANGLES -- #
         # ==================================== #
         if self.thrust > 1e-6:
-            theta_x_raw = torque_body_cmd[1] / (self.thrust * lever)
+            theta_x_raw = -torque_body_cmd[1] / (self.thrust * lever)
             theta_y_raw = -torque_body_cmd[0] / (self.thrust * lever)
         else:
             theta_x_raw = 0
@@ -85,11 +85,11 @@ class TVCStructure:
         self.d_theta_y = dty / dt
 
         # Update gimbal
-        # r_step_x = R.from_rotvec(rotvec=[0, dtx, 0])
-        # r_step_y = R.from_rotvec(rotvec=[dty, 0, 0])
-
-        r_step_x = R.from_rotvec(rotvec=[dtx,0, 0])
-        r_step_y = R.from_rotvec(rotvec=[0,dty, 0])
+        r_step_x = R.from_rotvec(rotvec=[0, dtx, 0])
+        r_step_y = R.from_rotvec(rotvec=[dty, 0, 0])
+        #
+        # r_step_x = R.from_rotvec(rotvec=[dtx, 0, 0])
+        # r_step_y = R.from_rotvec(rotvec=[0, dty, 0])
         self.gimbal_orientation = (r_step_y * r_step_x) * self.gimbal_orientation
 
         if side_effect:
@@ -166,9 +166,12 @@ class TVCStructure:
         # -- UPDATE GIMBAL -- #
         # =================== #
 
-        r_step_x        = R.from_rotvec(rotvec=[dtx, 0, 0])
+        # r_step_x        = R.from_rotvec(rotvec=[dtx, 0, 0])
         # r_step_x        = R.from_rotvec(rotvec=[0, 0, 0])
-        r_step_y        = R.from_rotvec(rotvec=[0, -dty, 0])
+        # r_step_y        = R.from_rotvec(rotvec=[0, -dty, 0])
+
+        r_step_x        = R.from_rotvec(rotvec=[0, dtx, 0])
+        r_step_y        = R.from_rotvec(rotvec=[dty, 0, 0])
         self.gimbal_orientation = (r_step_y * r_step_x) * self.gimbal_orientation
 
 
@@ -220,6 +223,7 @@ class RollControl:
         """
         self.fins = fins
         self.struct = struct
+        self.angles = []
 
     def update_fin_angles(self, tab: FinTab, angle: float):
         """
@@ -244,12 +248,18 @@ class RollControl:
         r_list = []
         vel_mag = np.linalg.norm(vel)
 
-        for x in self.fins:
+        for i,x in enumerate(self.fins):
             if vel_mag > 1e-6:
 
                 # -- FIND THETA REQUIRED -- #
                 # a negative deflection results in a positive torque
-                theta_target_raw = -torque_cmd[2] / (rho * vel_mag**2 * x.area * np.pi * x.radial_distance)
+                if i == 0 or i == 1:
+                    theta_target_raw = torque_cmd[2] / (rho * vel_mag**2 * x.area * np.pi * x.radial_distance)
+
+                else:
+                    theta_target_raw = -torque_cmd[2] / (rho * vel_mag ** 2 * x.area * np.pi * x.radial_distance)
+
+                # theta_target_raw = -torque_cmd[2] / (rho * vel_mag**2 * x.area * np.pi * x.radial_distance)
 
                 # Clip to maximum angle
                 theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)
@@ -272,6 +282,8 @@ class RollControl:
 
             else:
                 r_list.append(x.tab_theta)
+
+        self.angles.append(np.degrees(r_list))
 
         return r_list[0], r_list[1], r_list[2], r_list[3]
 
