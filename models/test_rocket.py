@@ -247,7 +247,7 @@ if __name__ == "__main__":
 
     # Load once
     PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-    filename = os.path.join(PROJECT_ROOT, "TVC/missile_pingpong_profile.csv")
+    filename = os.path.join(PROJECT_ROOT, "TVC/cubic_sweep_profile.csv")
     df = pd.read_csv(filename)
 
     # Build interpolators

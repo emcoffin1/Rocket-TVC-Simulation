@@ -49,7 +49,7 @@ class TVCStructure:
         theta = Torque (of opposite axis) / (Thrust * HEIGHT-CG)
         :return:
         """
-        lever       = self.height - self.struct.cm_current
+        lever = self.height - self.struct.cm_current
 
         # ==================================== #
         # -- COMPUTE REQUIRED GIMBAL ANGLES -- #
@@ -71,8 +71,11 @@ class TVCStructure:
         ty_filter = (1 - alpha) * self.theta_y + alpha * theta_y_raw_clip
 
         # Rate Limit
-        dtx = np.clip(tx_filter - self.theta_x, -self.max_rate * dt, self.max_rate * dt)
-        dty = np.clip(ty_filter - self.theta_y, -self.max_rate * dt, self.max_rate * dt)
+        dtx = tx_filter - self.theta_x
+        dty = ty_filter - self.theta_y
+
+        dtx = np.clip(dtx, -self.max_rate * dt, self.max_rate * dt)
+        dty = np.clip(dty, -self.max_rate * dt, self.max_rate * dt)
 
         # ==================== #
         # -- UPDATED GIMBAL -- #
@@ -85,11 +88,10 @@ class TVCStructure:
         self.d_theta_y = dty / dt
 
         # Update gimbal
-        r_step_x = R.from_rotvec(rotvec=[0, dtx, 0])
-        r_step_y = R.from_rotvec(rotvec=[dty, 0, 0])
-        #
-        # r_step_x = R.from_rotvec(rotvec=[dtx, 0, 0])
-        # r_step_y = R.from_rotvec(rotvec=[0, dty, 0])
+        r_step_x = R.from_rotvec([0, dtx, 0])
+
+        r_step_y = R.from_rotvec([dty, 0, 0])
+
         self.gimbal_orientation = (r_step_y * r_step_x) * self.gimbal_orientation
 
         if side_effect:
@@ -215,7 +217,7 @@ class FinTab:
         self.tab_theta  = 0
         self.dtheta = 0
         self.previous_theta = 0
-        self.area       = 0.0045
+        self.area       = 0.05
         self.max_tab_angle = np.deg2rad(15)
         self.max_dtheta = np.deg2rad(750)     # Maximum dtheta per second
         self.motor_tau = 0.5
@@ -262,7 +264,8 @@ class RollControl:
 
                 # -- FIND THETA REQUIRED -- #
                 # a negative deflection results in a positive torque
-                theta_target_raw = torque_cmd[2] / (rho * vel_mag**2 * x.area * np.pi * np.abs(x.radial_distance) * x.positive_torque)
+                theta_target_raw = torque_cmd[2] / (4 * rho * vel[2]**2 * x.area * np.pi * np.abs(x.radial_distance) * x.positive_torque)
+                # theta_target_raw = np.arcsin(theta_target_raw)
 
                 # Clip to maximum angle
                 theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)

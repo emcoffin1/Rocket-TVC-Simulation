@@ -196,8 +196,8 @@ class Rocket:
             # else:
             #     torque = f[0] * x.location[1]
 
-            # if side_effect and (8.0 < time < 8.1):
-            #     print(f"LOCATION: {x.location} || FORCE: {np.round(f, 2)} || TORQUE: {torque}")
+            if side_effect and (time < 8.1):
+                print(f"LOCATION: {x.location} || FORCE: {np.round(f, 5)} || TORQUE: {torque}")
 
             torque_roll += torque
 
@@ -221,14 +221,11 @@ class Rocket:
             # print(f"ACTUAL: {np.round(torque_roll + torque_thrust, 2)}")
             pass
 
-        if side_effect and (8.0 < time < 8.1):
-            # print(f"ACTUAL: {np.round(torque_thrust+torque_roll, 2)}")
+        if side_effect and (time < 8.1):
             # print(f"ROLL FORCE: {np.round(lift_force_body,5)}")
             print(f"CALCULATED: {np.round(torque_body_total,5)}")
             pass
 
-        # if side_effect and (8.0 < time < 8.1):
-        #     print(f"CALC TORQUE: {np.round(torque_thrust + torque_roll,2)}")
 
         # ========================= #
         # -- GIMBAL ANGLE CHANGE -- #
@@ -363,6 +360,7 @@ class Rocket:
         else:
             torque_cmd = np.zeros(3)
         # Get updated gimbal orientation in body frame
+
         thrust_dir_body: R = self.tvc.compute_gimbal_orientation_using_torque(
             torque_body_cmd=torque_cmd,
             dt=dt,
@@ -408,7 +406,7 @@ class Rocket:
         # -- TOTAL GLOBAL FORCE -- #
         # ======================== #
 
-        if side_effect and (8.0 < time < 8.1):
+        if side_effect and (time < 8.1):
             # print("Thrust (Body):", thrust_vector_body)
             # print("Thrust (Global):", thrust_force_global)
             # print("Drag (Body):", drag_force_body)
@@ -418,8 +416,8 @@ class Rocket:
             # lat_thrust = np.linalg.norm(thrust_vector_body[:2] * thrust_mag)
             # print(f"Lateral thrust: {lat_thrust:.2f} N")
             # print(f"ROLL FORCE: {np.around(lift_force_body,2)}")
-            # print(round(time,2),round(np.degrees(x_theta), 2), round(np.degrees(x__theta), 2), round(np.degrees(y_theta), 2),
-            #       round(np.degrees(y__theta), 2))
+            print(round(time,2), np.round(v_air_body, 2), round(np.rad2deg(x_theta), 4), round(np.rad2deg(x__theta), 4), round(np.rad2deg(y_theta), 4),
+                  round(np.rad2deg(y__theta), 4))
             print(f"EXPECTED: {np.round(torque_cmd,5)}")
 
             pass

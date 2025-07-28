@@ -73,7 +73,7 @@ class Aerodynamics:
                 lift_value = np.zeros(3)
                 lift.append(lift_value)
             else:
-                cl = 2 * np.pi * x.tab_theta
+                cl = 2 * np.pi * np.sin(x.tab_theta)
                 # Scalar
                 lift_comp = 0.5 * self.air.rho * vel_ms[2]**2 * x.area * cl
                 # Multiplied to force direction identity
@@ -82,6 +82,6 @@ class Aerodynamics:
 
                 lift.append(np.array(lift_value))
 
-            if side_effect and 8.0 < time < 8.1:
-                print(f"FORCE: {lift_value} || ANGLE: {np.degrees(x.tab_theta)} || CL: {cl}")
+            # if side_effect and 8.0 < time < 8.1:
+            #     print(f"FORCE: {lift_value} || ANGLE: {np.degrees(x.tab_theta)} || CL: {cl}")
         return lift

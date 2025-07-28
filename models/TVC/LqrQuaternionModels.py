@@ -87,7 +87,7 @@ class QuaternionFinder:
     Body frame: +Z through nose, +X to right, +Y down (right‐handed).
     """
 
-    def __init__(self, lqr=None, profile_csv: str = "missile_pingpong_profile.csv"):
+    def __init__(self, lqr=None, profile_csv: str = "cubic_sweep_profile.csv"):
         # Physical parameters & aerodynamic models
         self.lqr = lqr if lqr is not None else LQR()
 
