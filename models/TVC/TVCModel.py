@@ -194,18 +194,24 @@ class TVCStructure:
 
 
 class FinTab:
-    def __init__(self, rocket_position: np.ndarray, name):
+    def __init__(self, rocket_position: np.ndarray, name, positive_torque):
         """Controls roll authority through the x-axis using fin tabs"""
 
         # Location of the fin wrt the center of gravity
         self.location = rocket_position
         # Depicts the direction of the forces acting on the component using cross product and normalization
         force_direction = np.linalg.cross(np.array([0, 0, 1]), rocket_position)
-        self.force_direction = force_direction / np.linalg.norm(force_direction)
+        force_direction /= np.linalg.norm(force_direction)
+
+        self.force_direction = np.abs(force_direction)
+        self.positive_torque = positive_torque
+
+        # self.force_direction = -1 * force_direction
 
         self.name = name
 
         self.radial_distance = rocket_position[0] if rocket_position[0] != 0 else rocket_position[1]
+
         self.tab_theta  = 0
         self.dtheta = 0
         self.previous_theta = 0
@@ -213,6 +219,8 @@ class FinTab:
         self.max_tab_angle = np.deg2rad(15)
         self.max_dtheta = np.deg2rad(750)     # Maximum dtheta per second
         self.motor_tau = 0.5
+
+        print(self.name, self.location, self.force_direction)
 
 
 class RollControl:
@@ -236,7 +244,8 @@ class RollControl:
         # print( np.round(np.degrees(angle),2))
 
 
-    def calculate_theta(self, torque_cmd: np.ndarray, rho: float, vel: np.ndarray, dt: float):
+    def calculate_theta(self, torque_cmd: np.ndarray, rho: float, vel: np.ndarray, dt: float, time: float,
+                        side_effect=False):
         """
         Function to determine the tab angles to attain a specific roll rate
         :param torque_cmd: Torque command determined from LQR [Tx Ty Tz]
@@ -248,18 +257,12 @@ class RollControl:
         r_list = []
         vel_mag = np.linalg.norm(vel)
 
-        for i,x in enumerate(self.fins):
+        for i, x in enumerate(self.fins):
             if vel_mag > 1e-6:
 
                 # -- FIND THETA REQUIRED -- #
                 # a negative deflection results in a positive torque
-                if i == 0 or i == 1:
-                    theta_target_raw = torque_cmd[2] / (rho * vel_mag**2 * x.area * np.pi * x.radial_distance)
-
-                else:
-                    theta_target_raw = -torque_cmd[2] / (rho * vel_mag ** 2 * x.area * np.pi * x.radial_distance)
-
-                # theta_target_raw = -torque_cmd[2] / (rho * vel_mag**2 * x.area * np.pi * x.radial_distance)
+                theta_target_raw = torque_cmd[2] / (rho * vel_mag**2 * x.area * np.pi * np.abs(x.radial_distance) * x.positive_torque)
 
                 # Clip to maximum angle
                 theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)

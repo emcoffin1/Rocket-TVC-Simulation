@@ -226,7 +226,7 @@ class QuaternionFinder:
 
 
     def compute_command_torque(self, time, rocket_pos, rocket_quat, rocket_omega, rocket_vel,
-                               inertia_matrix, acc_mag, side_effect = None):
+                               inertia_matrix, acc_mag, dt, side_effect = None):
         """TAKE 2
         step 1: detect lateral drift
                 find drift with location_exp - location_current
@@ -257,12 +257,6 @@ class QuaternionFinder:
 
             pass to lqr
         """
-
-        def normalize(v):
-            norm = np.linalg.norm(v)
-            if norm < 1e-8:
-                return v
-            return v / norm
 
         alt_m = rocket_pos[2]
 
@@ -333,7 +327,7 @@ class QuaternionFinder:
 
         if side_effect and (8.0 < time < 8.1):
 
-            print(f"EXPECTED: {np.round(torque,2)}")
+            # print(f"EXPECTED: {np.round(torque,2)}")
             # nose_vec = R.from_quat(rocket_quat).apply([0, 0, 1])  # +Z in body
             # trajectory_vec = target_pos_future - target_pos
             # trajectory_vec /= np.linalg.norm(trajectory_vec)

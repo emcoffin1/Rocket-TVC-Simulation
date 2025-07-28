@@ -52,7 +52,7 @@ class Aerodynamics:
         return drag * drag_direction
 
 
-    def getLiftForce(self, vel_ms, roll_tabs: object):
+    def getLiftForce(self, vel_ms, roll_tabs: object, time, side_effect=False):
         """
         Determines the lift force in all 3 axis, that is to say that the
         roll authority will be handled within the return array
@@ -69,12 +69,19 @@ class Aerodynamics:
         lift = []
         for x in roll_tabs.fins:
             if v_mag <= 0:
-                lift.append(np.zeros(3))
+                cl = 0
+                lift_value = np.zeros(3)
+                lift.append(lift_value)
             else:
                 cl = 2 * np.pi * x.tab_theta
                 # Scalar
-                lift_comp = 0.5 * self.air.rho * v_mag**2 * x.area * cl
+                lift_comp = 0.5 * self.air.rho * vel_ms[2]**2 * x.area * cl
                 # Multiplied to force direction identity
-                lift_value = lift_comp * x.force_direction
+                # lift_value = lift_comp * x.force_direction
+                lift_value = lift_comp * -(np.abs(x.force_direction))
+
                 lift.append(np.array(lift_value))
+
+            if side_effect and 8.0 < time < 8.1:
+                print(f"FORCE: {lift_value} || ANGLE: {np.degrees(x.tab_theta)} || CL: {cl}")
         return lift

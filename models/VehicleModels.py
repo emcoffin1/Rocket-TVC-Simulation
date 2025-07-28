@@ -96,10 +96,10 @@ class Rocket:
         # -- TABS -- #
         z_comp = self.structure.cm_current - self.structure.length
         r_comp = 0.2032
-        self.pos_x_tab = FinTab(rocket_position=np.array([r_comp, 0, z_comp]), name="PX")
-        self.neg_x_tab = FinTab(rocket_position=np.array([-r_comp, 0, z_comp]), name="NX")
-        self.pos_y_tab = FinTab(rocket_position=np.array([0, r_comp, z_comp]), name="PY")
-        self.neg_y_tab = FinTab(rocket_position=np.array([0, -r_comp, z_comp]), name="NY")
+        self.pos_x_tab = FinTab(rocket_position=np.array([r_comp, 0, z_comp]), name="PX", positive_torque=-1)
+        self.neg_x_tab = FinTab(rocket_position=np.array([-r_comp, 0, z_comp]), name="NX", positive_torque=1)
+        self.pos_y_tab = FinTab(rocket_position=np.array([0, r_comp, z_comp]), name="PY", positive_torque=1)
+        self.neg_y_tab = FinTab(rocket_position=np.array([0, -r_comp, z_comp]), name="NY", positive_torque=-1)
         self.fins = [self.pos_x_tab, self.neg_x_tab, self.pos_y_tab, self.neg_y_tab]
         self.roll_control = RollControl(fins=self.fins, struct=self.structure)
 
@@ -188,23 +188,25 @@ class Rocket:
         torque_coriolis = np.linalg.cross(r_cp, coriolis_force_body)
         torque_roll = np.zeros(3)
         for f, x in zip(lift_force_body, self.roll_control.fins):
-            # torque = np.linalg.cross(x.location, f)
+            torque = np.linalg.cross(x.location, f)
             # # print(f"Location: {x.name}, Force: {f}, Torque: {torque}")
             #
+            # if x.location[0] != 0:
+            #     torque = f[1] * x.location[0]
+            # else:
+            #     torque = f[0] * x.location[1]
+
             # if side_effect and (8.0 < time < 8.1):
-            #     print(f"LOCATION: {x.location} || FORCE: {np.round(f,2)} || TORQUE: {torque}")
-            if x.location[0] != 0:
-                torque = f[1] * x.location[0]
-            else:
-                torque = f[0] * x.location[1]
+            #     print(f"LOCATION: {x.location} || FORCE: {np.round(f, 2)} || TORQUE: {torque}")
+
             torque_roll += torque
 
-        torque_body_total = torque_thrust + torque_drag + torque_coriolis + torque_roll
-
+        # torque_body_total = torque_thrust + torque_drag + torque_coriolis + torque_roll
+        torque_body_total = torque_thrust + torque_roll
         # Angular acceleration
         # !eventually update I to reflect better physics and mass distribution!
         # domega          = torque_body_total / self.structure.I
-        domega = (torque_thrust + torque_roll) / self.structure.I
+        domega = torque_body_total / self.structure.I
         # domega = np.zeros(3)
 
         if side_effect:
@@ -216,12 +218,13 @@ class Rocket:
             # print(np.round(pos,2))
             # print(f"ACTUAL TORQUE: {np.round(torque_thrust, 2)}")
             # print(f"DEFLECTED THRUST {np.round(thrust_vector_body,2)}")
-            # print(f"ACTUAL: {np.round(torque_roll, 2)}")
+            # print(f"ACTUAL: {np.round(torque_roll + torque_thrust, 2)}")
             pass
 
         if side_effect and (8.0 < time < 8.1):
-            print(f"ACTUAL: {np.round(torque_thrust, 2)}")
+            # print(f"ACTUAL: {np.round(torque_thrust+torque_roll, 2)}")
             # print(f"ROLL FORCE: {np.round(lift_force_body,5)}")
+            print(f"CALCULATED: {np.round(torque_body_total,5)}")
             pass
 
         # if side_effect and (8.0 < time < 8.1):
@@ -353,7 +356,8 @@ class Rocket:
                                                                                  rocket_omega=omega,
                                                                                  rocket_vel=v_air_body,
                                                                                  acc_mag=acc_mag,
-                                                                                 side_effect=side_effect
+                                                                                 side_effect=side_effect,
+                                                                                 dt=dt
                                                                                  )
 
         else:
@@ -384,9 +388,11 @@ class Rocket:
 
         # Get new tab angles (return for debug only, other definitions access objects directly)
         x_theta, x__theta, y_theta, y__theta = self.roll_control.calculate_theta(torque_cmd=torque_cmd, rho=rho,
-                                                                                 vel=v_air_body, dt=dt)
+                                                                                 vel=v_air_body, dt=dt, time=time,
+                                                                                 side_effect=side_effect)
         # Returns a list of all tab forces
-        lift_force_body = self.aerodynamics.getLiftForce(vel_ms=v_air_body, roll_tabs=self.roll_control)
+        lift_force_body = self.aerodynamics.getLiftForce(vel_ms=v_air_body, roll_tabs=self.roll_control, time=time,
+                                                         side_effect=side_effect)
 
         # Convert to body force after summing the arrays (should come to 0)
         lift_force_global = R.from_quat(quat).apply(sum(lift_force_body))
@@ -396,9 +402,6 @@ class Rocket:
             # np.round(lift_force_body[1],2),
             # np.round(lift_force_body[2],2),
             # np.round(lift_force_body[3],2),}  ||  GLOBAL: {np.round(lift_force_global,2)}")
-            # print(round(time,2),round(np.degrees(x_theta), 2), round(np.degrees(x__theta), 2), round(np.degrees(y_theta), 2),
-            #       round(np.degrees(y__theta), 2))
-
 
             pass
         # ======================== #
@@ -415,6 +418,9 @@ class Rocket:
             # lat_thrust = np.linalg.norm(thrust_vector_body[:2] * thrust_mag)
             # print(f"Lateral thrust: {lat_thrust:.2f} N")
             # print(f"ROLL FORCE: {np.around(lift_force_body,2)}")
+            # print(round(time,2),round(np.degrees(x_theta), 2), round(np.degrees(x__theta), 2), round(np.degrees(y_theta), 2),
+            #       round(np.degrees(y__theta), 2))
+            print(f"EXPECTED: {np.round(torque_cmd,5)}")
 
             pass
 

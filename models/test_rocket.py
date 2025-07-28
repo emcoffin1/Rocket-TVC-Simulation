@@ -234,8 +234,8 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-    for x in rocket.roll_control.angles:
-        print(x[0], x[1], x[2], x[3])
+    # for x in rocket.roll_control.angles:
+    #     print(x[0], x[1], x[2], x[3])
     plt.plot(rocket.roll_control.angles[0], label="+x")
     plt.plot(rocket.roll_control.angles[1],label="-x")
     plt.plot(rocket.roll_control.angles[2],label="+y")
