@@ -1,5 +1,7 @@
 """Program that takes positional data and determines the quaternion error, passes through an LQR, and provides
-a corrective quaternion to change the angular velocity"""
+a corrective quaternion to change the angular velocity
+https://ntrs.nasa.gov/api/citations/20110015701/downloads/20110015701.pdf
+"""
 import numpy as np
 import pandas as pd
 from scipy.linalg import solve_continuous_are
@@ -12,20 +14,18 @@ def normalize(v: np.ndarray) -> np.ndarray:
         return v  # Avoid division by zero
     return v / norm
 class LQR:
-    def __init__(self, q: np.ndarray = None, r: np.ndarray = None):
+    def __init__(self, q: np.ndarray = None, r: np.ndarray = None, max_torque: np.ndarray = None):
         # Places emphasis on quaternion correction
         self.q = q if q is not None else np.diag([1, 1, 1, 1, 1, 1, 1, 1])
         self.r = r if r is not None else np.eye(3) * 1
+        self.max_t = max_torque if max_torque is not None else np.array([1740, 1740, 37.2])
 
-    def _compute_gain(self, inertia_matrix: np.ndarray, acc_mag: float):
+    def _compute_gain(self, inertia_matrix: np.ndarray):
         # System matrices (8,6 and 6x3)
-        A = np.zeros((8, 8))
+        A = np.zeros((6, 6))
         A[0:3, 3:6] = np.eye(3)
 
-        A[6, 0] = -acc_mag
-        A[7, 1] = -acc_mag
-
-        B = np.zeros((8, 3))
+        B = np.zeros((6, 3))
         B[3:6, :] = np.linalg.inv(inertia_matrix)
 
         P = solve_continuous_are(A, B, self.q, self.r)
@@ -33,7 +33,7 @@ class LQR:
 
         return K
 
-    def get_torque(self, x: np.ndarray, inertia_matrix: np.ndarray, acc_mag: float) -> np.ndarray:
+    def get_torque(self, x: np.ndarray, inertia_matrix: np.ndarray) -> np.ndarray:
         """
         Takers state variables and returns torque command
         :param x: 6x state vector [qx, qy, qz, wx, wy, wz, vx, vy]
@@ -41,8 +41,12 @@ class LQR:
         :return: Torque command in body frame [Tx, Ty, Tz]
         """
         inertia_matrix = np.diag(inertia_matrix)
-        k = self._compute_gain(inertia_matrix=inertia_matrix, acc_mag=acc_mag)
+        k = self._compute_gain(inertia_matrix=inertia_matrix)
         torque = -k @ x
+
+        if self.max_t is not None:
+            torque = np.clip(torque, -self.max_t, self.max_t)
+
         return torque
 
 
@@ -66,7 +70,7 @@ class QuaternionFinder:
         self.cur_ang = np.deg2rad(0)
 
 
-    def compute_command_torque(self, time, rocket_pos, rocket_quat, rocket_omega, rocket_vel,
+    def _compute_command_torque(self, time, rocket_pos, rocket_quat, rocket_omega, rocket_vel,
                                inertia_matrix, acc_mag, dt, side_effect = None):
         """TAKE 2
         step 1: detect lateral drift
@@ -201,6 +205,32 @@ class QuaternionFinder:
 
         return torque
 
+    def compute_command_torque(self, time, rocket_pos, rocket_quat, rocket_omega, rocket_vel,
+                               inertia_matrix, dt, accel_base, side_effect=None):
+
+        alt = rocket_pos[2]
+        pos_exp, quat_exp = self.get_pose_by_altitude(alt=alt)
+        pos_fut, quat_fut = self.get_pose_by_altitude(alt=alt+2.0)
+
+        a_des = self.compute_a_des(rocket_pos=rocket_pos, rocket_vel=rocket_vel, r_target=pos_exp,
+                                   r_future=pos_fut, accel_base=accel_base)
+
+        q_des = self.compute_q_des_fixed_roll(a_des=a_des, angle_rad=np.deg2rad(90))
+
+        q_err = self.quat_mult(self.quat_conj(q=q_des), rocket_quat)
+
+        axis = q_err[:3]
+        w = q_err[3]
+
+        theta_err = 2 * np.sign(w) * axis
+
+        x = np.concatenate([theta_err, rocket_omega])
+        torque = self.lqr.get_torque(x=x, inertia_matrix=inertia_matrix)
+
+        return torque
+
+
+
     def compute_q_des_fixed_roll(self, a_des, angle_rad):
         z_axis = normalize(a_des)
 
@@ -208,8 +238,10 @@ class QuaternionFinder:
         if abs(np.dot(z_axis, y_ref)) > 0.95:
             y_ref = np.array([1.0, 0.0, 0.0])
 
+        # Project y_ref into plane orthogonal to z_axis to get y_basis
         y_proj = normalize(y_ref - np.dot(y_ref, z_axis) * z_axis)
 
+        # Create x_proj as cross product (guaranteed orthogonal to z and y)
         x_proj = np.linalg.cross(y_proj, z_axis)
 
         cos_r = np.cos(angle_rad)
@@ -223,13 +255,38 @@ class QuaternionFinder:
 
         return q_des
 
-    def compute_a_des(self):
+    def compute_a_des(self, rocket_pos, rocket_vel, r_target, r_future, accel_base):
         """
         Computes the expected acceleration using velocity vectors between current and future positions
         Can be updated if velocities are introduced into trajectory
         Currently uses path following trajectories
         :return:
         """
+        # Tangent direction of path
+        v_path = normalize(r_future - r_target)
+
+        # Expected speed
+        v_mag_expected = np.linalg.norm(rocket_vel)
+
+        # Desire velocity vector
+        v_des = v_path * v_mag_expected
+
+        # Positional drift
+        e_pos = r_target - rocket_pos
+        e_vel = v_des - rocket_vel
+
+        # PD Style correction
+        k_pos = 0.05
+        k_vel = 0.5
+        a_des = k_pos * e_pos + k_vel * e_vel
+
+        # Extra Force Compensation
+        a_des += accel_base
+
+        return a_des
+
+
+
 
     # --- Lookup Trajectories ---------------------------------------------------
 
@@ -265,14 +322,11 @@ class QuaternionFinder:
                               self._iqy(alt),
                               self._iqz(alt),
                               self._iqw(alt) ])
-            return pos, self._safe_normalize(quat)
+            return pos, self.safe_normalize(quat)
         except Exception:
             pos = np.array([0,0,alt])
             quat = np.array([0,0,0,1])
             return pos, quat
-
-
-
 
     def _rotation_between_vectors(self, v0: np.ndarray, v1: np.ndarray) -> np.ndarray:
         axis = np.cross(v0, v1)
@@ -286,11 +340,11 @@ class QuaternionFinder:
     # --- Quaternion Helpers ---------------------------------------------------
 
     @staticmethod
-    def _quat_conj(q: np.ndarray) -> np.ndarray:
+    def quat_conj(q: np.ndarray) -> np.ndarray:
         return np.array([-q[0], -q[1], -q[2], q[3]], dtype=q.dtype)
 
     @staticmethod
-    def _quat_mult(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    def quat_mult(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         av, aw = a[:3], a[3]
         bv, bw = b[:3], b[3]
         vec = aw*bv + bw*av + np.linalg.cross(av, bv)
@@ -301,16 +355,16 @@ class QuaternionFinder:
         return vector / np.linalg.norm(vector)
 
     @staticmethod
-    def _safe_normalize(q: np.ndarray, eps: float = 1e-8) -> np.ndarray:
+    def safe_normalize(q: np.ndarray, eps: float = 1e-8) -> np.ndarray:
         n = np.linalg.norm(q)
         return q if n < eps else q / n
 
     @staticmethod
-    def _align_sign(q: np.ndarray) -> np.ndarray:
+    def align_sign(q: np.ndarray) -> np.ndarray:
         return q if q[3] >= 0 else -q
 
     @staticmethod
-    def _quat_from_axis_angle(axis, angle: float) -> np.ndarray:
+    def quat_from_axis_angle(axis, angle: float) -> np.ndarray:
         a = np.array(axis, dtype=float)
         a = a / np.linalg.norm(a)
         s = np.sin(angle/2)

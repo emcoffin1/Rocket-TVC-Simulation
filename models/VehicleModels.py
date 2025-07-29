@@ -73,8 +73,8 @@ def quaternionDerivative(quat, omega):
 class Rocket:
     def __init__(self):
 
-        q = np.diag([20, 20, 20, 10, 10, 10, 3, 3])
-        r = np.eye(3) * 2
+        q = np.diag([50, 50, 10, 5, 5, 1])
+        r = np.diag([1, 1, 0.5])
 
         # -- Constants -- #
         self.grav = EnvironmentalModels.GravityModel()
@@ -308,8 +308,8 @@ class Rocket:
         # ==================== #
 
         # Gravity [0 0 9.8] function of altitude
-        gravity_global = self.grav.getGravity(alt_m=alt_m)
-        gravity_force_global = gravity_global * mass
+        gravity_global_acc = self.grav.getGravity(alt_m=alt_m)
+        gravity_force_global = gravity_global_acc * mass
 
         # Coriolis [x y z] function of velocity
         coriolis_acc_body = self.cor.getCoriolisEffect(vel_m_s=v_air_body)
@@ -330,15 +330,12 @@ class Rocket:
         # drag_force_body = np.zeros(3)
         drag_force_global = R.from_quat(quat).apply(drag_force_body)
 
-
-
         # =================== #
         # -- THRUST FORCES -- #
         # =================== #
 
         # Get raw thrust (no direction) [z]
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
-        acc_mag = thrust_mag / mass
 
         # Save burntime for later display
         if thrust_mag == 0 and not self.burntime:
@@ -348,15 +345,14 @@ class Rocket:
         # !pulls data from other objects, keep as function!
         self.tvc.update_variables_(thrust_mag)
 
+        accel_base = drag_force_global/mass + gravity_global_acc
+
         if thrust_mag != 0:
             torque_cmd = self.quaternion.compute_command_torque(rocket_pos=pos, rocket_quat=quat, time=time,
-                                                                                 inertia_matrix=self.structure.I,
-                                                                                 rocket_omega=omega,
-                                                                                 rocket_vel=v_air_body,
-                                                                                 acc_mag=acc_mag,
-                                                                                 side_effect=side_effect,
-                                                                                 dt=dt
-                                                                                 )
+                                                                inertia_matrix=self.structure.I, rocket_omega=omega,
+                                                                rocket_vel=v_air_global, accel_base=accel_base,
+                                                                side_effect=side_effect, dt=dt
+                                                                )
 
         else:
             torque_cmd = np.zeros(3)
