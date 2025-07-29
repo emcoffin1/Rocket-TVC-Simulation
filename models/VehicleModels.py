@@ -98,8 +98,8 @@ class Rocket:
         r_comp = 0.2032
         self.pos_x_tab = FinTab(rocket_position=np.array([r_comp, 0, z_comp]), name="PX", positive_torque=-1)
         self.neg_x_tab = FinTab(rocket_position=np.array([-r_comp, 0, z_comp]), name="NX", positive_torque=1)
-        self.pos_y_tab = FinTab(rocket_position=np.array([0, r_comp, z_comp]), name="PY", positive_torque=1)
-        self.neg_y_tab = FinTab(rocket_position=np.array([0, -r_comp, z_comp]), name="NY", positive_torque=-1)
+        self.pos_y_tab = FinTab(rocket_position=np.array([0, r_comp, z_comp]), name="PY", positive_torque=-1)
+        self.neg_y_tab = FinTab(rocket_position=np.array([0, -r_comp, z_comp]), name="NY", positive_torque=1)
         self.fins = [self.pos_x_tab, self.neg_x_tab, self.pos_y_tab, self.neg_y_tab]
         self.roll_control = RollControl(fins=self.fins, struct=self.structure)
 
@@ -393,31 +393,11 @@ class Rocket:
         # Convert to body force after summing the arrays (should come to 0)
         lift_force_global = R.from_quat(quat).apply(sum(lift_force_body))
 
-        if side_effect:
-            # print(f"BODY: {np.round(lift_force_body[0],2),
-            # np.round(lift_force_body[1],2),
-            # np.round(lift_force_body[2],2),
-            # np.round(lift_force_body[3],2),}  ||  GLOBAL: {np.round(lift_force_global,2)}")
-
-            pass
         # ======================== #
         # -- TOTAL GLOBAL FORCE -- #
         # ======================== #
 
         if side_effect and (time < 8.1):
-            # print("Thrust (Body):", thrust_vector_body)
-            # print("Thrust (Global):", thrust_force_global)
-            # print("Drag (Body):", drag_force_body)
-            # print("Drag (Global):", drag_force_global)
-            # print("Nose vector (global):", R.from_quat(quat).apply([0, 0, 1]))
-            # print("Thrust (global):", thrust_force_global / np.linalg.norm(thrust_force_global))
-            # lat_thrust = np.linalg.norm(thrust_vector_body[:2] * thrust_mag)
-            # print(f"Lateral thrust: {lat_thrust:.2f} N")
-            # print(f"ROLL FORCE: {np.around(lift_force_body,2)}")
-            # print(round(time,2), np.round(v_air_body, 2), round(np.rad2deg(x_theta), 4), round(np.rad2deg(x__theta), 4), round(np.rad2deg(y_theta), 4),
-            #       round(np.rad2deg(y__theta), 4))
-            # print(f"EXPECTED: {np.round(torque_cmd,5)}")
-
             pass
 
         total_force_global = (thrust_force_global + drag_force_global + gravity_force_global +
@@ -434,4 +414,3 @@ class Rocket:
         print(f"Initial Fluid Mass:     {self.structure.fluid_mass} [kg]")
         print("=" * 60)
 
-# thrust_vector_body = gimbal_orient.apply([0.0, 0.0, thrust_mag])  # original thrust vector straight out

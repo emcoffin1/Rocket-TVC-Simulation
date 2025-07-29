@@ -56,8 +56,16 @@ class TVCStructure:
         # -- COMPUTE REQUIRED GIMBAL ANGLES -- #
         # ==================================== #
         if self.thrust > 1e-6:
-            theta_x_raw = torque_body_cmd[1] / (self.thrust * lever)
-            theta_y_raw = -torque_body_cmd[0] / (self.thrust * lever)
+            ratio_x = -torque_body_cmd[1] / (self.thrust * lever)
+            ratio_y = torque_body_cmd[0] / (self.thrust * lever)
+
+            # Clip to ensure not out of arcsin limits
+            ratio_x = np.clip(ratio_x, -1.0, 1.0)
+            ratio_y = np.clip(ratio_y, -1.0, 1.0)
+
+            theta_x_raw = np.arcsin(ratio_x)
+            theta_y_raw = np.arcsin(ratio_y)
+
         else:
             theta_x_raw = 0
             theta_y_raw = 0
@@ -89,18 +97,17 @@ class TVCStructure:
         self.d_theta_y = dty / dt
 
         # Update gimbal
-        r_step_x = R.from_rotvec([0, dtx, 0])
-        r_step_y = R.from_rotvec([dty, 0, 0])
+        rot_x = R.from_rotvec(self.theta_x * np.array([1, 0, 0]))
+        rot_y = R.from_rotvec(self.theta_y * np.array([0, 1, 0]))
+        combined_rot = rot_y * rot_x
 
-
-        # self.gimbal_orientation = (r_step_y * r_step_x) * self.gimbal_orientation
-
-        self.gimbal_orientation = (r_step_x * r_step_y) * self.gimbal_orientation
+        base_thrust = np.array([0, 0, 1])
+        rotated_dir = combined_rot.apply(base_thrust)
 
         if side_effect:
             self.gimbal_log.append([np.rad2deg(self.theta_x), np.rad2deg(self.theta_y)])
-            print(f"t: {round(time,2)} | GIMBAL X: {np.round(np.rad2deg(self.theta_x),3)} || Y: {np.round(np.rad2deg(self.theta_y),3)}")
-        return self.gimbal_orientation
+
+        return rotated_dir
 
 
 
@@ -181,14 +188,16 @@ class RollControl:
 
         for i, x in enumerate(self.fins):
             if vel_mag > 1e-6:
-
                 # -- FIND THETA REQUIRED -- #
                 # a negative deflection results in a positive torque
-                theta_target_raw = torque_cmd[2] / (4 * rho * vel[2]**2 * x.area * np.pi * np.abs(x.radial_distance) * x.positive_torque)
-                # theta_target_raw = np.arcsin(theta_target_raw)
+                theta_target_raw = torque_cmd[2] / (4 * rho * vel[2] ** 2 * x.area * np.pi * (np.abs(x.radial_distance) * x.positive_torque)
 
-                # Clip to maximum angle
-                theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)
+
+
+                            # theta_target_raw = np.arcsin(theta_target_raw)
+
+                            # Clip to maximum angle
+                            theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)
 
                 # Apply first order filter
                 alpha = dt / (x.motor_tau + dt)
@@ -206,7 +215,7 @@ class RollControl:
 
                 r_list.append(x.tab_theta)
 
-            else:
+                else:
                 r_list.append(x.tab_theta)
 
         self.angles.append(np.degrees(r_list))

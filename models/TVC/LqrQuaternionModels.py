@@ -209,19 +209,26 @@ class QuaternionFinder:
                                inertia_matrix, dt, accel_base, side_effect=None):
 
         alt = rocket_pos[2]
+
+        # Expected positions
         pos_exp, quat_exp = self.get_pose_by_altitude(alt=alt)
         pos_fut, quat_fut = self.get_pose_by_altitude(alt=alt+2.0)
 
+        # Desired acceleration vector
         a_des = self.compute_a_des(rocket_pos=rocket_pos, rocket_vel=rocket_vel, r_target=pos_exp,
-                                   r_future=pos_fut, accel_base=accel_base)
+                                   r_future=pos_fut, accel_base=accel_base, side_effect=side_effect)
 
+        # Desired quaternion
         q_des = self.compute_q_des_fixed_roll(a_des=a_des, angle_rad=np.deg2rad(90))
 
+        # Error quaternion
         q_err = self.quat_mult(self.quat_conj(q=q_des), rocket_quat)
 
+        # Separate eror quaternion into components
         axis = q_err[:3]
         w = q_err[3]
 
+        # Compute angle components
         theta_err = 2 * np.sign(w) * axis
 
         x = np.concatenate([theta_err, rocket_omega])
@@ -232,30 +239,51 @@ class QuaternionFinder:
 
 
     def compute_q_des_fixed_roll(self, a_des, angle_rad):
+
+        if np.linalg.norm(a_des) < 1e-6:
+            print("[WARNING] a_des too small, skipping attitude target")
+            return np.array([0, 0, 0, 1])  # identity quaternion
+
         z_axis = normalize(a_des)
 
         y_ref = np.array([0.0, 1.0, 0.0])
         if abs(np.dot(z_axis, y_ref)) > 0.95:
             y_ref = np.array([1.0, 0.0, 0.0])
 
-        # Project y_ref into plane orthogonal to z_axis to get y_basis
-        y_proj = normalize(y_ref - np.dot(y_ref, z_axis) * z_axis)
+            # Construct a frame using Gram-Schmidt
+        x_proj = y_ref - np.dot(y_ref, z_axis) * z_axis
+        x_axis = normalize(x_proj)
 
-        # Create x_proj as cross product (guaranteed orthogonal to z and y)
-        x_proj = np.linalg.cross(y_proj, z_axis)
+        y_axis = np.linalg.cross(z_axis, x_axis)
+        y_axis = normalize(y_axis)
 
+        # Apply fixed roll about z_axis (Euler-style)
         cos_r = np.cos(angle_rad)
         sin_r = np.sin(angle_rad)
 
-        x_axis = cos_r * x_proj + sin_r * y_proj
-        y_axis = -sin_r * x_axis + cos_r * y_proj
+        # Rotate x/y around z_axis to apply roll
+        x_rot = cos_r * x_axis + sin_r * y_axis
+        y_rot = -sin_r * x_axis + cos_r * y_axis
 
-        R_world_to_body = np.stack((x_axis, y_axis, z_axis), axis=1)
+        # Build matrix
+        R_world_to_body = np.stack((x_rot, y_rot, z_axis))
+        det = np.linalg.det(R_world_to_body)
+
+        if np.linalg.norm(a_des) < 1e-6:
+            print("[WARNING] a_des too small, skipping attitude target")
+            return np.array([0, 0, 0, 1])  # identity quaternion
+
+        # Ensure right-handed
+        if det <= 0 or not np.isfinite(det):
+            print(f"[WARNING] Rotation matrix had det={det:.4f}, flipping Y-axis to fix.")
+            R_world_to_body[:, 1] *= -1
+
+        # Convert to quaternion
         q_des = R.from_matrix(matrix=R_world_to_body).as_quat()
 
         return q_des
 
-    def compute_a_des(self, rocket_pos, rocket_vel, r_target, r_future, accel_base):
+    def compute_a_des(self, rocket_pos, rocket_vel, r_target, r_future, accel_base, side_effect):
         """
         Computes the expected acceleration using velocity vectors between current and future positions
         Can be updated if velocities are introduced into trajectory
@@ -282,6 +310,9 @@ class QuaternionFinder:
 
         # Extra Force Compensation
         a_des += accel_base
+
+        if side_effect:
+            self.pos_error.append(e_pos)
 
         return a_des
 
