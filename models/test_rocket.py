@@ -98,7 +98,7 @@ if __name__ == "__main__":
             print(f"ALT: {pos[2]}")
             break
 
-        if pos[2] < 0 and time > 5:
+        if pos[2] < 1e-5 and time > 5:
             print("ROCKET IMPACT")
             break
 
@@ -122,24 +122,10 @@ if __name__ == "__main__":
 
 
 
-    print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
+    # print_results(time=time_log, pos=pos_log, vel=vel_log, q=dynamicpress_log, rocket=rocket)
 
     #
-    # print("--- EXTRA LOG ---")
-    # plt.subplot(3,1,1)
-    # plt.plot(time_log[:-1],rocket.velocity)
-    # plt.xlabel("Vel")
-    # plt.grid(True)
-    #
-    # plt.subplot(3,1,2)
-    # plt.plot(time_log[:-1], rocket.viscosity)
-    # plt.xlabel("Viscosity")
-    # plt.grid(True)
-    #
-    # plt.subplot(3,1,3)
-    # plt.plot(time_log[:-1], rocket.reynolds)
-    # plt.xlabel("Reynolds")
-    # plt.grid(True)
+
     # q_e = []
     # for x in rocket.tvc.quaternion.error:
     #     # q_e.append([np.rad2deg(x[0]), np.rad2deg(x[1]), np.rad2deg(x[2])])
@@ -181,9 +167,9 @@ if __name__ == "__main__":
     # plt.plot(time_log, vel_log)
     # plt.grid(True)
     #
-    # plt.subplot(3,1,2)
-    # plt.plot(time_log, quat_log[:,:2])
-    # plt.grid(True)
+    plt.subplot(3,1,2)
+    plt.plot(time_log, quat_log[:,:2])
+    plt.grid(True)
     #
     # plt.subplot(3,1,3)
     # plt.plot(time_log, pos_log)
@@ -191,58 +177,58 @@ if __name__ == "__main__":
 
 
     # rocket.mfr.append(rocket.mfr[-1]+ 0.00000001)
-    gimb = np.array(rocket.tvc.gimbal_log)
-    quat_er = np.array([q.as_quat() for q in rocket.quaternion.quat_error])
-    # pos_er = np.array([q.as_quat() for q in rocket.quaternion.pos_error])
-    pos_er = np.array(rocket.quaternion.pos_error)
-
-    plt.subplot(5, 1, 1)
-    plt.plot(time_log, gimb[:,0],label="x")
-    plt.plot(time_log, gimb[:,0], label="y")
-    plt.ylabel("Gimbal Ang")
-    plt.legend()
-    plt.grid(True)
-
-    # plt.subplot(5,1,2)
-    # plt.plot(time_log[:-1], quat_er[:, 0], label="qx")
-    # plt.plot(time_log[:-1], quat_er[:, 1], label="qy")
-    # plt.plot(time_log[:-1], quat_er[:, 2], label="qz")
-    # plt.plot(time_log[:-1], quat_er[:, 3], label="qw")
+    # gimb = np.array(rocket.tvc.gimbal_log)
+    # quat_er = np.array([q.as_quat() for q in rocket.quaternion.quat_error])
+    # # pos_er = np.array([q.as_quat() for q in rocket.quaternion.pos_error])
+    # pos_er = np.array(rocket.quaternion.pos_error)
+    #
+    # plt.subplot(5, 1, 1)
+    # plt.plot(time_log, gimb[:,0],label="x")
+    # plt.plot(time_log, gimb[:,0], label="y")
+    # plt.ylabel("Gimbal Ang")
     # plt.legend()
-    # plt.ylabel("Quat Error")
     # plt.grid(True)
-
-    plt.subplot(5,1,3)
-    plt.plot(time_log[:-1], pos_er[:, 0], label="px")
-    plt.plot(time_log[:-1], pos_er[:, 1], label="py")
-    plt.plot(time_log[:-1], pos_er[:, 2], label="pz")
-    plt.legend()
-    plt.ylabel("Pos Error")
-    plt.grid(True)
-
-    plt.subplot(5,1,4)
-    plt.plot(time_log, quat_log[:,-1])
-    plt.ylabel("QUAT")
-    plt.grid(True)
-
-    plt.subplot(5,1,5)
-    plt.plot(time_log, omega_log)
-    plt.ylabel("OMEGA")
-    plt.xlabel("Time [s]")
-    plt.grid(True)
-
+    #
+    # # plt.subplot(5,1,2)
+    # # plt.plot(time_log[:-1], quat_er[:, 0], label="qx")
+    # # plt.plot(time_log[:-1], quat_er[:, 1], label="qy")
+    # # plt.plot(time_log[:-1], quat_er[:, 2], label="qz")
+    # # plt.plot(time_log[:-1], quat_er[:, 3], label="qw")
+    # # plt.legend()
+    # # plt.ylabel("Quat Error")
+    # # plt.grid(True)
+    #
+    # plt.subplot(5,1,3)
+    # plt.plot(time_log[:-1], pos_er[:, 0], label="px")
+    # plt.plot(time_log[:-1], pos_er[:, 1], label="py")
+    # plt.plot(time_log[:-1], pos_er[:, 2], label="pz")
+    # plt.legend()
+    # plt.ylabel("Pos Error")
+    # plt.grid(True)
+    #
+    # plt.subplot(5,1,4)
+    # plt.plot(time_log, quat_log[:,-1])
+    # plt.ylabel("QUAT")
+    # plt.grid(True)
+    #
+    # plt.subplot(5,1,5)
+    # plt.plot(time_log, omega_log)
+    # plt.ylabel("OMEGA")
+    # plt.xlabel("Time [s]")
+    # plt.grid(True)
+    #
     plt.tight_layout()
     plt.show()
-
-    # for x in rocket.roll_control.angles:
-    #     print(x[0], x[1], x[2], x[3])
-    plt.plot(rocket.roll_control.angles[0], label="+x")
-    plt.plot(rocket.roll_control.angles[1],label="-x")
-    plt.plot(rocket.roll_control.angles[2],label="+y")
-    plt.plot(rocket.roll_control.angles[3],label="-y")
-    plt.tight_layout()
-    plt.legend()
-    plt.show()
+    #
+    # # for x in rocket.roll_control.angles:
+    # #     print(x[0], x[1], x[2], x[3])
+    # plt.plot(rocket.roll_control.angles[0], label="+x")
+    # plt.plot(rocket.roll_control.angles[1],label="-x")
+    # plt.plot(rocket.roll_control.angles[2],label="+y")
+    # plt.plot(rocket.roll_control.angles[3],label="-y")
+    # plt.tight_layout()
+    # plt.legend()
+    # plt.show()
 
 
     # Load once

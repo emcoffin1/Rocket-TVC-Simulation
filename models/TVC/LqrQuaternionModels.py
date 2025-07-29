@@ -8,11 +8,7 @@ from scipy.linalg import solve_continuous_are
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation as R
 import os
-def normalize(v: np.ndarray) -> np.ndarray:
-    norm = np.linalg.norm(v)
-    if norm < 1e-8:
-        return v  # Avoid division by zero
-    return v / norm
+
 class LQR:
     def __init__(self, q: np.ndarray = None, r: np.ndarray = None, max_torque: np.ndarray = None):
         # Places emphasis on quaternion correction
@@ -33,16 +29,16 @@ class LQR:
 
         return K
 
-    def get_torque(self, x: np.ndarray, inertia_matrix: np.ndarray) -> np.ndarray:
+    def get_torque(self, x: np.ndarray, inertia_matrix: np.ndarray, drag_torque: np.ndarray) -> np.ndarray:
         """
         Takers state variables and returns torque command
         :param x: 6x state vector [qx, qy, qz, wx, wy, wz, vx, vy]
         :param inertia_matrix: rocket inertia matrix [Ixx, Iyy, Izz]
         :return: Torque command in body frame [Tx, Ty, Tz]
         """
-        inertia_matrix = np.diag(inertia_matrix)
+
         k = self._compute_gain(inertia_matrix=inertia_matrix)
-        torque = -k @ x
+        torque = -k @ x + drag_torque
 
         if self.max_t is not None:
             torque = np.clip(torque, -self.max_t, self.max_t)
@@ -206,23 +202,26 @@ class QuaternionFinder:
         return torque
 
     def compute_command_torque(self, time, rocket_pos, rocket_quat, rocket_omega, rocket_vel,
-                               inertia_matrix, dt, accel_base, side_effect=None):
+                               inertia_matrix, dt, accel_base, drag_torque, side_effect=None):
 
         alt = rocket_pos[2]
 
         # Expected positions
         pos_exp, quat_exp = self.get_pose_by_altitude(alt=alt)
+        # pos_exp = np.array([1, 0 , alt])
         pos_fut, quat_fut = self.get_pose_by_altitude(alt=alt+2.0)
+        # pos_fut = np.array([1.5, 0, alt])
 
         # Desired acceleration vector
         a_des = self.compute_a_des(rocket_pos=rocket_pos, rocket_vel=rocket_vel, r_target=pos_exp,
                                    r_future=pos_fut, accel_base=accel_base, side_effect=side_effect)
-
+        a_des_unit = self.normalize(a_des)
         # Desired quaternion
-        q_des = self.compute_q_des_fixed_roll(a_des=a_des, angle_rad=np.deg2rad(90))
+        # q_des = self.compute_q_des_fixed_roll(a_des=a_des, angle_rad=np.deg2rad(90), side_effect=side_effect)
+        q_des = self.compute_q_des_from_accel(a_des=a_des_unit, roll_angle_rad=0.0)
 
         # Error quaternion
-        q_err = self.quat_mult(self.quat_conj(q=q_des), rocket_quat)
+        q_err = self.quat_mult(self.quat_conj(q=rocket_quat), q_des)
 
         # Separate eror quaternion into components
         axis = q_err[:3]
@@ -232,30 +231,39 @@ class QuaternionFinder:
         theta_err = 2 * np.sign(w) * axis
 
         x = np.concatenate([theta_err, rocket_omega])
-        torque = self.lqr.get_torque(x=x, inertia_matrix=inertia_matrix)
+        torque = self.lqr.get_torque(x=x, inertia_matrix=inertia_matrix, drag_torque=drag_torque)
+        # torque = np.array([0,0.05,0])
+
+
+        if side_effect:
+            # print(f"a_des: {np.round(a_des,4)}")
+            # print(f"alt: {alt} || q_err: {np.round(q_err,6)}")
+            # print(f"q_des: {np.round(q_des,4)}")
+            print(f"EXPECTED: {np.round(torque,4)}")
+            pass
 
         return torque
 
 
 
-    def compute_q_des_fixed_roll(self, a_des, angle_rad):
+    def _compute_q_des_fixed_roll(self, a_des, angle_rad, side_effect):
 
         if np.linalg.norm(a_des) < 1e-6:
             print("[WARNING] a_des too small, skipping attitude target")
             return np.array([0, 0, 0, 1])  # identity quaternion
 
-        z_axis = normalize(a_des)
+        z_axis = self.normalize(a_des)
 
-        y_ref = np.array([0.0, 1.0, 0.0])
+        y_ref = np.array([0.0, 0.0, 1.0])
         if abs(np.dot(z_axis, y_ref)) > 0.95:
             y_ref = np.array([1.0, 0.0, 0.0])
 
             # Construct a frame using Gram-Schmidt
         x_proj = y_ref - np.dot(y_ref, z_axis) * z_axis
-        x_axis = normalize(x_proj)
+        x_axis = self.normalize(x_proj)
 
         y_axis = np.linalg.cross(z_axis, x_axis)
-        y_axis = normalize(y_axis)
+        y_axis = self.normalize(y_axis)
 
         # Apply fixed roll about z_axis (Euler-style)
         cos_r = np.cos(angle_rad)
@@ -281,6 +289,45 @@ class QuaternionFinder:
         # Convert to quaternion
         q_des = R.from_matrix(matrix=R_world_to_body).as_quat()
 
+        if side_effect:
+            # print(f"q_des: {q_des}")
+
+            pass
+
+        return q_des
+
+    def compute_q_des_from_accel(self, a_des, roll_angle_rad=0.0):
+        """
+        Align +Z body with a_des vector.
+        Use roll_angle_rad to define rotation about new Z (optional).
+        """
+        if np.linalg.norm(a_des) < 1e-6:
+            return np.array([0, 0, 0, 1])  # Identity
+
+        # New Z axis: direction of desired thrust
+        z_axis = -a_des / np.linalg.norm(a_des)
+
+        # Reference 'up' direction — pick world X or Y to define roll
+        up_ref = np.array([0.0, 1.0, 0.0])
+        if abs(np.dot(z_axis, up_ref)) > 0.95:
+            up_ref = np.array([1.0, 0.0, 0.0])  # Avoid near-parallel
+
+        # Create orthonormal basis (x, y, z)
+        x_axis = np.cross(up_ref, z_axis)
+        x_axis /= np.linalg.norm(x_axis)
+        y_axis = np.cross(z_axis, x_axis)
+
+        # Apply roll about z_axis if needed
+        cos_r = np.cos(roll_angle_rad)
+        sin_r = np.sin(roll_angle_rad)
+        x_rot = cos_r * x_axis + sin_r * y_axis
+        y_rot = -sin_r * x_axis + cos_r * y_axis
+
+        # Construct rotation matrix: body axes as columns
+        R_world_to_body = np.stack((x_rot, y_rot, z_axis), axis=1)
+
+        # Convert to quaternion
+        q_des = R.from_matrix(R_world_to_body).as_quat()
         return q_des
 
     def compute_a_des(self, rocket_pos, rocket_vel, r_target, r_future, accel_base, side_effect):
@@ -291,7 +338,7 @@ class QuaternionFinder:
         :return:
         """
         # Tangent direction of path
-        v_path = normalize(r_future - r_target)
+        v_path = self.normalize(r_future - r_target)
 
         # Expected speed
         v_mag_expected = np.linalg.norm(rocket_vel)
@@ -304,8 +351,8 @@ class QuaternionFinder:
         e_vel = v_des - rocket_vel
 
         # PD Style correction
-        k_pos = 0.05
-        k_vel = 0.5
+        k_pos = 0.5
+        k_vel = 40
         a_des = k_pos * e_pos + k_vel * e_vel
 
         # Extra Force Compensation
@@ -313,6 +360,18 @@ class QuaternionFinder:
 
         if side_effect:
             self.pos_error.append(e_pos)
+
+            # print("r_target:", r_target)
+            # print("r_future:", r_future)
+            # print("v_path:", v_path)
+            # print(f"a_base: {accel_base}")
+            # print(f"a_des : {a_des}")
+            # dir_des = a_des / np.linalg.norm(a_des)
+            # dir_base = accel_base / np.linalg.norm(accel_base)
+            # angle_error = np.arccos(np.clip(np.dot(dir_des, dir_base), -1.0, 1.0)) * 180 / np.pi
+            # print(f"Angle error: {angle_error:.2f} deg")
+
+            # print("rocket_vel (global):", rocket_vel)
 
         return a_des
 
@@ -383,7 +442,10 @@ class QuaternionFinder:
         return np.hstack((vec, scl))
     @staticmethod
     def normalize(vector: np.ndarray) -> np.ndarray:
-        return vector / np.linalg.norm(vector)
+        norm = np.linalg.norm(vector)
+        if norm < 1e-8:
+            return vector  # Avoid division by zero
+        return vector / norm
 
     @staticmethod
     def safe_normalize(q: np.ndarray, eps: float = 1e-8) -> np.ndarray:

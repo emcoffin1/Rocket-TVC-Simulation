@@ -31,7 +31,7 @@ class TVCStructure:
         # Gimbal limits & dynamics
         self.gimbal_tau = 0.2
         self.max_rate   = np.deg2rad(100)
-        self.max_angle  = np.deg2rad(10)
+        self.max_angle  = np.deg2rad(7.5)
 
         # Log
         self.gimbal_log = []
@@ -57,7 +57,7 @@ class TVCStructure:
         # ==================================== #
         if self.thrust > 1e-6:
             ratio_x = -torque_body_cmd[1] / (self.thrust * lever)
-            ratio_y = torque_body_cmd[0] / (self.thrust * lever)
+            ratio_y = -torque_body_cmd[0] / (self.thrust * lever)
 
             # Clip to ensure not out of arcsin limits
             ratio_x = np.clip(ratio_x, -1.0, 1.0)
@@ -96,9 +96,12 @@ class TVCStructure:
         self.d_theta_x = dtx / dt
         self.d_theta_y = dty / dt
 
-        # Update gimbal
-        rot_x = R.from_rotvec(self.theta_x * np.array([1, 0, 0]))
-        rot_y = R.from_rotvec(self.theta_y * np.array([0, 1, 0]))
+        # # Update gimbal
+        rot_x = R.from_rotvec(self.theta_x * np.array([0, 1, 0]))
+        rot_y = R.from_rotvec(self.theta_y * np.array([1, 0, 0]))
+
+        # rot_x = R.from_rotvec(np.deg2rad(0.01) * np.array([0, 1, 0]))
+        # rot_y = R.from_rotvec(np.deg2rad(0) * np.array([1, 0, 0]))
         combined_rot = rot_y * rot_x
 
         base_thrust = np.array([0, 0, 1])
@@ -187,10 +190,11 @@ class RollControl:
         vel_mag = np.linalg.norm(vel)
 
         for i, x in enumerate(self.fins):
-            if vel_mag > 1e-6:
+            if vel_mag > 1e-6 and rho > 1e-6:
                 # -- FIND THETA REQUIRED -- #
                 # a negative deflection results in a positive torque
-                theta_target_raw = torque_cmd[2] / (4 * rho * vel[2] ** 2 * x.area * np.pi * (np.abs(x.radial_distance) * x.positive_torque)
+
+                theta_target_raw = torque_cmd[2] / (4 * rho * vel[2] ** 2 * x.area * np.pi * (np.abs(x.radial_distance)) * x.positive_torque)
 
                 # Clip to maximum angle
                 theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)
@@ -211,7 +215,7 @@ class RollControl:
 
                 r_list.append(x.tab_theta)
 
-                else:
+            else:
                 r_list.append(x.tab_theta)
 
         self.angles.append(np.degrees(r_list))

@@ -217,7 +217,6 @@ class CombustionChamber:
             print("=" * 100)
             print(f"[SHUTDOWN] Tanks empty: {mf_mass} --- {mo_mass}")
             print(f"[SHUTDOWN] Burn Stops: {self.time:.2f}s")
-            print("=" * 100)
             return 0
 
         # STEP 3: Get current flow rates

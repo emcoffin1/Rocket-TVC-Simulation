@@ -48,7 +48,7 @@ class Aerodynamics:
         mach = self.air.getMachNumber(velocity_mps=v_mag)
         drag_direction = -vel / v_mag
         cd = self._get_drag_coeff(mach_v=mach)
-        drag = 0.5 * self.air.rho * vel ** 2 * cd * 0.0545
+        drag = 0.5 * self.air.rho * vel[2] ** 2 * cd * 0.0545
         return drag * drag_direction
 
 
