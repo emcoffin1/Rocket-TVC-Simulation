@@ -201,6 +201,36 @@ class QuaternionFinder:
 
         return torque
 
+    def compute_q_des_fixed_roll(self, a_des, angle_rad):
+        z_axis = normalize(a_des)
+
+        y_ref = np.array([0.0, 1.0, 0.0])
+        if abs(np.dot(z_axis, y_ref)) > 0.95:
+            y_ref = np.array([1.0, 0.0, 0.0])
+
+        y_proj = normalize(y_ref - np.dot(y_ref, z_axis) * z_axis)
+
+        x_proj = np.linalg.cross(y_proj, z_axis)
+
+        cos_r = np.cos(angle_rad)
+        sin_r = np.sin(angle_rad)
+
+        x_axis = cos_r * x_proj + sin_r * y_proj
+        y_axis = -sin_r * x_axis + cos_r * y_proj
+
+        R_world_to_body = np.stack((x_axis, y_axis, z_axis), axis=1)
+        q_des = R.from_matrix(matrix=R_world_to_body).as_quat()
+
+        return q_des
+
+    def compute_a_des(self):
+        """
+        Computes the expected acceleration using velocity vectors between current and future positions
+        Can be updated if velocities are introduced into trajectory
+        Currently uses path following trajectories
+        :return:
+        """
+
     # --- Lookup Trajectories ---------------------------------------------------
 
     def _load_lookup_table(self, csv_path: str):
@@ -266,6 +296,9 @@ class QuaternionFinder:
         vec = aw*bv + bw*av + np.linalg.cross(av, bv)
         scl = aw*bw - av.dot(bv)
         return np.hstack((vec, scl))
+    @staticmethod
+    def normalize(vector: np.ndarray) -> np.ndarray:
+        return vector / np.linalg.norm(vector)
 
     @staticmethod
     def _safe_normalize(q: np.ndarray, eps: float = 1e-8) -> np.ndarray:
