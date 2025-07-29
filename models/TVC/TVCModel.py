@@ -192,12 +192,8 @@ class RollControl:
                 # a negative deflection results in a positive torque
                 theta_target_raw = torque_cmd[2] / (4 * rho * vel[2] ** 2 * x.area * np.pi * (np.abs(x.radial_distance) * x.positive_torque)
 
-
-
-                            # theta_target_raw = np.arcsin(theta_target_raw)
-
-                            # Clip to maximum angle
-                            theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)
+                # Clip to maximum angle
+                theta_target_raw_clipped = np.clip(theta_target_raw, -x.max_tab_angle, x.max_tab_angle)
 
                 # Apply first order filter
                 alpha = dt / (x.motor_tau + dt)
