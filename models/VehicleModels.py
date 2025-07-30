@@ -1,11 +1,11 @@
 import numpy as np
-from scipy.spatial.transform import Rotation as R
+
+from models import EnvironmentalModels
+from models.Aero.AerodynamicsModel import *
 from models.Engine.EngineModels import *
 from models.Structural.StructuralModel import StructuralModel
-from models.TVC.TVCModel import *
 from models.TVC.LqrQuaternionModels import LQR, QuaternionFinder
-from models.Aero.AerodynamicsModel import *
-from models import EnvironmentalModels
+from models.TVC.TVCModel import *
 
 
 def rk4_step(rocket, state, dt):
@@ -73,8 +73,8 @@ def quaternionDerivative(quat, omega):
 class Rocket:
     def __init__(self):
 
-        q = np.diag([10, 10, 10, 2, 2, 2])
-        r = np.diag([1, 1, 1]) * 10
+        q = np.diag([10, 10, 10, 2, 2, 2]) * 200
+        r = np.diag([1, 1, 1]) * 40
 
         # -- Constants -- #
         self.grav = EnvironmentalModels.GravityModel()
@@ -120,17 +120,22 @@ class Rocket:
             0.0, 0.0,  # Gimbal angles
         ])
 
-
-
         # -- Logging -- #
-        self.acc = 0
-        self.thrust = [np.array([0,0,0])]  # Thrust curve
-        self.burntime = None  # Time burn stops
-        self.mach = []  # Mach list
-        self.velocity = []  # Velocity list
-        self.reynolds = []  # Reynolds list
-        self.viscosity = []
-        self.dynamic_pres = []
+        self.acceleration   = 0
+        self.thrust         = [np.array([0,0,0])]  # Thrust curve
+        self.burntime       = None  # Time burn stops
+        self.mach           = []  # Mach list
+        self.velocity       = []  # Velocity list
+        self.reynolds       = []  # Reynolds list
+        self.viscosity      = []
+        self.dynamic_pres   = []
+
+        self.pitchXZ        = []
+        self.yawYZ          = []
+        self.velAOA         = []
+        self.torque_cmd     = []
+        self.torque_act     = []
+        self.thrust_magn    = []
 
         # Init print function
         self._initialize_vehicle()
@@ -184,7 +189,6 @@ class Rocket:
         r_thrust = np.array([0.0, 0.0, self.structure.length - self.structure.cm_current])
 
         # Torques T = r (cross) F
-        # torque_thrust = np.linalg.cross(r_thrust, thrust_vector_body)
         torque_thrust = np.linalg.cross(thrust_vector_body, r_thrust)
         torque_drag = np.linalg.cross(r_cp, drag_force_body)
         torque_coriolis = np.linalg.cross(r_cp, coriolis_force_body)
@@ -209,9 +213,18 @@ class Rocket:
         domega = np.linalg.inv(I) @ (torque_body_total - omega_cross)
 
         if side_effect:
+            self.torque_act.append(torque_body_total)
             # print(f"ACTUAL: {np.round(torque_body_total, 4)} || DRAG: {np.round(torque_drag,4)}")
-            print(f"ACTUAL: {torque_body_total}")
+            # print(f"ACTUAL: {torque_body_total}")
             # print(r_cp, drag_force_body, torque_drag)
+
+            print("τ_drag  :", np.round(torque_drag, 4))
+            print('T_force :', np.round(drag_force_body,4))
+            # print("τ_thrust (from TVC):", np.round(torque_thrust, 2))
+            # print("τ_roll (from fins):", np.round(torque_roll, 2))
+            # print("τ_total (applied):", np.round(torque_body_total, 2))
+            # print("ω_dot:", np.round(domega, 3))
+
             pass
 
         # ========================= #
@@ -263,9 +276,8 @@ class Rocket:
             quat = np.array([0.0, 0.0, 0.0, 1.0])
         else:
             quat = quat / quat_norm
-        # =====================================
 
-        r_world_to_body = R.from_quat(quat).inv()
+        # =====================================
 
         rho = self.air.getDensity()
         stat_pres = self.air.getStaticPressure()
@@ -284,6 +296,28 @@ class Rocket:
             self.velocity.append(np.linalg.norm(vel))
             self.dynamic_pres.append(self.air.getDynamicPressure(vel))
 
+        # ==================== #
+        # -- PITCH YAW ROLL -- #
+        # ==================== #
+
+        # Rockets positive z in world frame
+        rot = R.from_quat(quat)
+        z_axis_world = rot.apply([0, 0, 1])
+
+        # Projection into xz plane
+        z_proj = np.array([z_axis_world[0], 0, z_axis_world[2]])
+        z_proj /= np.linalg.norm(z_proj)
+
+        # Pitch angle from vertical (Z up)
+        pitch_angle_deg = np.rad2deg(np.arctan2(z_proj[0], z_proj[2]))
+
+        # Projection into  xy plane
+        z_proj = np.array([0, z_axis_world[1], z_axis_world[2]])
+        z_proj /= np.linalg.norm(z_proj)
+
+        # Yaw angle from vertical (Z up)
+        yaw_angle_deg = np.rad2deg(np.arctan2(z_proj[1], z_proj[2]))
+
         # ============== #
         # -- Velocity -- #
         # ============== #
@@ -294,11 +328,16 @@ class Rocket:
 
         # Determine rocket orientation on inertial frame
         r_world_to_body = R.from_quat(quat).inv()
-        # if side_effect:
-        #     print(r_world_to_body)
 
         # Determine velocity of air on body (for drag calculations)
         v_air_body = r_world_to_body.apply(v_air_global)
+
+        # AOA -- velocity_vector *(dot) direction of body up (comparison axis)
+        v_hat = v_air_body / (np.linalg.norm(v_air_body) + 1e-6)
+        z_body = np.array([0, 0, 1])
+        dot = np.clip(np.dot(v_hat, z_body), -1.0, 1.0)
+        # Take arc-cos
+        aoa_deg = np.rad2deg(np.arccos(dot))
 
         # ==================== #
         # -- NATURAL FORCES -- #
@@ -337,18 +376,12 @@ class Rocket:
         # Get raw thrust (no direction) [z]
         thrust_mag = self.engine.runBurn(dt=dt, alt_m=alt_m, side_effect=side_effect)
 
-        # Save burntime for later display
-        if thrust_mag == 0 and not self.burntime:
-            print(f"[SHUTDOWN] Alt: {pos[2]}")
-            print("=" * 100)
-            self.burntime = time
-
         # Update tvc thrust values for easier computing
         # !pulls data from other objects, keep as function!
         self.tvc.update_variables_(thrust_mag)
 
+        # Sum of expected accelerations to feed to LQR
         accel_base = drag_force_global/mass + gravity_global_acc
-        # print(accel_base)
 
         if thrust_mag != 0:
             torque_cmd = self.quaternion.compute_command_torque(rocket_pos=pos, rocket_quat=quat, time=time,
@@ -398,16 +431,39 @@ class Rocket:
         # -- TOTAL GLOBAL FORCE -- #
         # ======================== #
 
-        if side_effect and (time < 8.1):
-            pass
+        total_force_global = (thrust_force_global + drag_force_global + gravity_force_global +
+                              coriolis_force_global + lift_force_global)
 
+        # ======================= #
+        # -- LOGGING AND DEBUG -- #
+        # ======================= #
+
+        # Logging
+        if side_effect:
+            self.pitchXZ.append(pitch_angle_deg)
+            self.yawYZ.append(yaw_angle_deg)
+            self.velAOA.append(aoa_deg)
+            self.torque_cmd.append(torque_cmd)
+            self.thrust_magn.append(thrust_mag)
+
+        # Save burntime for later display
+        if thrust_mag == 0 and not self.burntime:
+            print(f"[SHUTDOWN] Alt: {pos[2]}")
+            print("=" * 100)
+            self.burntime = time
+
+        # Debug
         if side_effect:
             # print(f"EXPECTED: {np.round(torque_cmd,2)}")
             # print(f"ALT: {pos[2]:.2f}")
+            # print(f"DRAG: {np.round(drag_force_global,4)}")
+            # print(f"BODY VEL: {v_air_body}")
+            # print(f"GLOBAL VEL: {v_air_global}")
+            # print(f"DRAG: {drag_force_body}")
+            print(f"GIMBAL: {np.rad2deg(self.tvc.theta_x):.4f}")
+            print(f"PITCH:  {pitch_angle_deg:.2f}")
             pass
 
-        total_force_global = (thrust_force_global + drag_force_global + gravity_force_global +
-                              coriolis_force_global + lift_force_global)
 
         return thrust_vector_body, drag_force_body, coriolis_force_body, lift_force_body, total_force_global
 

@@ -152,7 +152,6 @@ class FinTab:
         self.max_dtheta = np.deg2rad(750)     # Maximum dtheta per second
         self.motor_tau = 0.5
 
-        print(self.name, self.location, self.force_direction)
 
 
 class RollControl:
