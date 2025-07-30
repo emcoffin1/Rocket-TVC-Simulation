@@ -6,6 +6,7 @@ import pandas as pd
 import os
 from scipy.spatial.transform import Rotation as R
 
+
 def print_results(time, pos, vel, q, rocket):
 
     print("=" * 60)
@@ -60,20 +61,28 @@ def print_results(time, pos, vel, q, rocket):
     print("=" * 60)
 
 
-def attitude_polar_plot(pitch, yaw):
+def attitude_polar_plot(pitch, yaw, gimbals):
 
-    fig = plt.figure(figsize=(6,6))
-    ax = fig.add_subplot(111, polar=True)
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6), subplot_kw={'projection': 'polar'})
 
-    ax.plot(yaw, pitch, label="Orientation")
+    # -- First Plot: Pitch vs Yaw --
+    axs[0].plot(yaw, pitch, label="Orientation")
+    axs[0].set_theta_zero_location("N")
+    axs[0].set_theta_direction(-1)
+    axs[0].set_rlabel_position(90)
+    axs[0].set_title("Rocket Pitch vs Yaw")
+    axs[0].legend()
 
-    ax.set_theta_zero_location("N")
-    ax.set_theta_direction(-1)
-    ax.set_rlabel_position(90)
+    axs[1].plot(gimbals[:, 0], gimbals[:, 1], label="Gimbal", color='Red')
+    axs[1].set_theta_zero_location("N")
+    axs[1].set_theta_direction(-1)
+    axs[1].set_rlabel_position(90)
+    axs[1].set_title("Gimbal Orientation")
+    axs[1].legend()
 
-    ax.set_title("Rocket Pitch vs Yaw (polar view)")
-    ax.legend()
+    plt.tight_layout()
     plt.show()
+
 
 
 def plot_3d(pos_log):
@@ -161,7 +170,7 @@ if __name__ == "__main__":
     for _ in range(steps):
         # Unpack state
         thrust_body, drag_body, coriolis_body, lift_body,total_global = rocket.getTotalForce(state, dt, side_effect=False)
-        pos, vel, quat, omega, tvc_quat, mass, time, aoa, beta, gimbals = VehicleModels.unpackStates(state)
+        pos, vel, quat, omega, mass, time, aoa, beta, gimbals = VehicleModels.unpackStates(state)
 
 
         if not rocket.engine.combustion_chamber.active:
@@ -191,6 +200,7 @@ if __name__ == "__main__":
     pos_error           = np.array(rocket.quaternion.pos_error)
     torque_command      = np.array(rocket.torque_cmd)
     torque_actual       = np.array(rocket.torque_act)
+    gimbals             = np.array(rocket.tvc.gimbal_log)
 
     # -- RANDOM LOGS -- #
     pitch               = rocket.pitchXZ
@@ -211,6 +221,6 @@ if __name__ == "__main__":
     plt.grid(True)
     plt.show()
 
-    attitude_polar_plot(pitch=pitch, yaw=yaw)
+    attitude_polar_plot(pitch=pitch, yaw=yaw, gimbals=gimbals)
     plot_3d(pos_log=pos_log)
 

@@ -14,105 +14,96 @@ class TVCStructure:
     def __init__(self,
                  structure_model: object,
                  aero_model: object,):
+        # -- OBJECTS -- #
         self.struct = structure_model
         self.aero   = aero_model
-        self.height = self.struct.length
 
+        # -- CONSTANTS -- #
+        self.height = self.struct.length
         self.p_y_inertia = self.struct.I[0]
 
-        # State
+        # -- STATES -- #
+        self.theta = np.array([0.0, 0.0])
+        self.theta_prev = np.array([0.0, 0.0])
+        self.d_theta = np.array([0.0, 0.0])
         self.thrust = 0.0
-        self.theta_x = 0.0
-        self.theta_y = 0.0
-        self.d_theta_x = 0.0
-        self.d_theta_y = 0.0
-        self.gimbal_orientation = R.identity()
 
-        # Gimbal limits & dynamics
+        # -- GIMBAL CONSTANTS -- #
         self.gimbal_tau = 0.2
         self.max_rate   = np.deg2rad(100)
         self.max_angle  = np.deg2rad(7.5)
 
-        # Log
+        # -- LOG -- #
         self.gimbal_log = []
-
-    def update_variables(self, thrust: float):
-        """Call each time step to refresh thrust & inertias."""
-        self.thrust = thrust
-        # reload inertias in case structure_model changes
-        self.I_roll     = self.struct.roll_inertia
-        self.I_pitchyaw = self.struct.pitch_yaw_inertia
 
     def compute_gimbal_orientation_using_torque(self, torque_body_cmd: np.ndarray, dt: float, time:float,
                                                 side_effect: bool = False):
         """
         Computes gimbal angle using torque commands computed by the LQR
         theta = Torque (of opposite axis) / (Thrust * HEIGHT-CG)
-        :return:
+        derived from Torque = F*r, where r = L*sin(theta)
+
+        Computes in an array for simpler code
+        :return: array to be multiplied by thrust magnitude [x y z]
         """
         lever = self.height - self.struct.cm_current
+        self.theta_prev = self.theta
 
         # ==================================== #
         # -- COMPUTE REQUIRED GIMBAL ANGLES -- #
         # ==================================== #
+
         if self.thrust > 1e-6:
-            ratio_x = -torque_body_cmd[1] / (self.thrust * lever)
-            ratio_y = -torque_body_cmd[0] / (self.thrust * lever)
+            # Using theta = Torque / (Length * Thrust)
+            self.theta = np.array([
+                                   torque_body_cmd[1] / (self.thrust * lever),
+                                   torque_body_cmd[0] / (self.thrust * lever)
+                                   ])
 
-            # Clip to ensure not out of arcsin limits
-            ratio_x = np.clip(ratio_x, -1.0, 1.0)
-            ratio_y = np.clip(ratio_y, -1.0, 1.0)
+            # Clip to ensure not out of arc-sin limits
+            self.theta = np.clip(self.theta, -1.0, 1.0)
 
-            theta_x_raw = np.arcsin(ratio_x)
-            theta_y_raw = np.arcsin(ratio_y)
+            # Apply arc-sin adjustment
+            self.theta = np.arcsin(self.theta)
 
         else:
-            theta_x_raw = 0
-            theta_y_raw = 0
+            self.theta = np.array([0.0, 0.0])
 
+        # -- CLIP TO MAX GIMBAL ANGLE -- #
         # Clip gimbal to max angles
-        theta_x_raw_clip = np.clip(theta_x_raw, -self.max_angle, self.max_angle)
-        theta_y_raw_clip = np.clip(theta_y_raw, -self.max_angle, self.max_angle)
+        self.theta = np.clip(self.theta, -self.max_angle, self.max_angle)
 
-        # First-order filter
+        # -- FIRST-ORDER FILTER -- #
+        # Time constant
         alpha = dt / (self.gimbal_tau + dt)
-        tx_filter = (1 - alpha) * self.theta_x + alpha * theta_x_raw_clip
-        ty_filter = (1 - alpha) * self.theta_y + alpha * theta_y_raw_clip
+        self.theta = (1 - alpha) * self.theta_prev + alpha * self.theta
 
         # Rate Limit
-        dtx = tx_filter - self.theta_x
-        dty = ty_filter - self.theta_y
+        d_theta = self.theta - self.theta_prev
 
-        dtx = np.clip(dtx, -self.max_rate * dt, self.max_rate * dt)
-        dty = np.clip(dty, -self.max_rate * dt, self.max_rate * dt)
+        d_theta = np.clip(d_theta, -self.max_rate*dt, self.max_rate*dt)
 
         # ==================== #
         # -- UPDATED GIMBAL -- #
         # ==================== #
 
         # Save values
-        self.theta_x += dtx
-        self.theta_y += dty
-        self.d_theta_x = dtx / dt
-        self.d_theta_y = dty / dt
+        self.d_theta = d_theta / dt
+        self.theta_prev += d_theta
+        self.theta = self.theta_prev
 
-        # # Update gimbal
-        rot_x = R.from_rotvec(self.theta_x * np.array([0, 1, 0]))
-        rot_y = R.from_rotvec(self.theta_y * np.array([1, 0, 0]))
-
-        # rot_x = R.from_rotvec(np.deg2rad(0.01) * np.array([0, 1, 0]))
-        # rot_y = R.from_rotvec(np.deg2rad(0) * np.array([1, 0, 0]))
+        # -- UPDATE GIMBAL ROTATION -- #
+        rot_x = R.from_rotvec(self.theta[0] * np.array([0, 1, 0]))
+        rot_y = R.from_rotvec(self.theta[1] * np.array([1, 0, 0]))
         combined_rot = rot_y * rot_x
 
         base_thrust = np.array([0, 0, 1])
         rotated_dir = combined_rot.apply(base_thrust)
 
         if side_effect:
-            self.gimbal_log.append([np.rad2deg(self.theta_x), np.rad2deg(self.theta_y)])
+            self.gimbal_log.append([np.rad2deg(self.theta[0]), np.rad2deg(self.theta[1])])
 
         return rotated_dir
-
-
 
     def update_variables_(self, thrust: float):
         """

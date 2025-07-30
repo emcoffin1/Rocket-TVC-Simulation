@@ -9,12 +9,16 @@ from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation as R
 import os
 
+
 class LQR:
-    def __init__(self, q: np.ndarray = None, r: np.ndarray = None, max_torque: np.ndarray = None):
+    def __init__(self, q: np.ndarray = None, r: np.ndarray = None, max_torque: np.ndarray = None, k_pos: float = None,
+                 k_vel: float = None):
         # Places emphasis on quaternion correction
         self.q = q if q is not None else np.diag([1, 1, 1, 1, 1, 1, 1, 1])
         self.r = r if r is not None else np.eye(3) * 1
         self.max_t = max_torque if max_torque is not None else np.array([1740, 1740, 37.2])
+        self.k_pos = k_pos if k_pos is not None else 1
+        self.k_vel = k_vel if k_vel is not None else 1
 
     def _compute_gain(self, inertia_matrix: np.ndarray):
         # System matrices (8,6 and 6x3)
@@ -56,14 +60,11 @@ class QuaternionFinder:
         # Physical parameters & aerodynamic models
         self.lqr = lqr if lqr is not None else LQR()
 
-        self.quat_error = []
+
         self.pos_error = []
 
         # Load altitude->(pos,quat) profile
         self._load_lookup_table(profile_csv)
-
-        self.iter = 0
-        self.cur_ang = np.deg2rad(0)
 
     def compute_command_torque(self, time, rocket_pos, rocket_quat, rocket_omega, rocket_vel,
                                inertia_matrix, dt, accel_base, drag_torque, side_effect=None):
@@ -97,17 +98,10 @@ class QuaternionFinder:
         x = np.concatenate([theta_err, rocket_omega])
         torque = self.lqr.get_torque(x=x, inertia_matrix=inertia_matrix, drag_torque=drag_torque)
 
-
         if side_effect:
-            # print(f"a_des: {np.round(a_des,4)}")
-            # print(np.round(q_err,4))
-            # print(f"alt: {alt} || q_err: {np.round(q_err,6)}")
-            # print(f"q_des: {np.round(q_des,4)}")
-            # print(f"EXPECTED: {np.round(torque,4)}")
             pass
 
         return torque
-
 
     def compute_q_des_from_accel(self, a_des, roll_angle_rad=0.0):
         """
@@ -164,8 +158,8 @@ class QuaternionFinder:
         e_vel = v_des - rocket_vel
 
         # PD Style correction
-        k_pos = 1
-        k_vel = 25
+        k_pos = self.lqr.k_pos
+        k_vel = self.lqr.k_vel
         a_des = k_pos * e_pos + k_vel * e_vel
 
         # Extra Force Compensation
@@ -174,22 +168,7 @@ class QuaternionFinder:
         if side_effect:
             self.pos_error.append(e_pos)
 
-            # print("r_target:", r_target)
-            # print("r_future:", r_future)
-            # print("v_path:", v_path)
-            # print(f"a_base: {accel_base}")
-            # print(f"a_des : {a_des}")
-            # dir_des = a_des / np.linalg.norm(a_des)
-            # dir_base = accel_base / np.linalg.norm(accel_base)
-            # angle_error = np.arccos(np.clip(np.dot(dir_des, dir_base), -1.0, 1.0)) * 180 / np.pi
-            # print(f"Angle error: {angle_error:.2f} deg")
-
-            # print("rocket_vel (global):", rocket_vel)
-
         return a_des
-
-
-
 
     # --- Lookup Trajectories ---------------------------------------------------
 
@@ -207,96 +186,55 @@ class QuaternionFinder:
 
     def get_pose_by_altitude(self, alt):
         """
-        Returns (pos, quat) at the given altitude via cubic interpolation.
+        Returns pos at the given altitude via cubic interpolation.
         """
-        # if self.iter == 800:
-        #     self.cur_ang += np.deg2rad(90)
-        #     self.iter = 0
-        # quat = np.array([0, 0, np.sin(self.cur_ang/2), np.cos(self.cur_ang/2)])
-        # self.iter += 1
-        #
-        # return np.array([0,0,alt]), quat
         try:
             # p=1/0
             pos = np.array([ self._ix(alt),
                              self._iy(alt),
                              alt ])
             quat = np.array([0, 0, 0, 1])
-            return pos, self.safe_normalize(quat)
+            return pos, self.normalize(quat)
         except Exception:
             pos = np.array([0,0,alt])
             quat = np.array([0,0,0,1])
             return pos, quat
 
-    def _rotation_between_vectors(self, v0: np.ndarray, v1: np.ndarray) -> np.ndarray:
-        axis = np.cross(v0, v1)
-        norm = np.linalg.norm(axis)
-        if norm < 1e-8:
-            return np.array([0.0, 0.0, 0.0, 1.0])
-        axis /= norm
-        angle = np.arccos(np.dot(v0, v1))
-        return np.concatenate([axis * np.sin(angle / 2), [np.cos(angle / 2)]])
-
     # --- Quaternion Helpers ---------------------------------------------------
 
     @staticmethod
     def quat_conj(q: np.ndarray) -> np.ndarray:
+        """
+        - Performs conjugation of a passed quaternion
+        - Inverts the sign
+        """
         return np.array([-q[0], -q[1], -q[2], q[3]], dtype=q.dtype)
 
     @staticmethod
     def quat_mult(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        """
+        Performs quaternion multiplication (Hamilton Product)
+        """
         av, aw = a[:3], a[3]
         bv, bw = b[:3], b[3]
         vec = aw*bv + bw*av + np.linalg.cross(av, bv)
         scl = aw*bw - av.dot(bv)
         return np.hstack((vec, scl))
+
     @staticmethod
     def normalize(vector: np.ndarray) -> np.ndarray:
+        """
+        Performs a safe normalization of a given vector or quaternion
+        """
         norm = np.linalg.norm(vector)
         if norm < 1e-8:
             return vector  # Avoid division by zero
         return vector / norm
 
     @staticmethod
-    def safe_normalize(q: np.ndarray, eps: float = 1e-8) -> np.ndarray:
-        n = np.linalg.norm(q)
-        return q if n < eps else q / n
-
-    @staticmethod
     def align_sign(q: np.ndarray) -> np.ndarray:
+        """
+        Performs a sign alignment (ensures path taken to new quaternion
+        is not the longest path)
+        """
         return q if q[3] >= 0 else -q
-
-    @staticmethod
-    def quat_from_axis_angle(axis, angle: float) -> np.ndarray:
-        a = np.array(axis, dtype=float)
-        a = a / np.linalg.norm(a)
-        s = np.sin(angle/2)
-        return np.hstack((a * s, np.cos(angle/2)))
-
-
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    q = QuaternionFinder(lqr=LQR())
-    h = 10000
-    pos = []
-    for i in range(h):
-
-        p, quat = q.get_path(alt=i)
-        pos.append(quat)
-
-
-    pos = np.array(pos)
-
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot(pos[:,0], pos[:,1], pos[:,2], label='Missile Trajectory', linewidth=2)
-    ax.set_xlabel('X Position [m]')
-    ax.set_ylabel('Y Position [m]')
-    ax.set_zlabel('Altitude Z [m]')
-    ax.set_title('Missile Trajectory Path (3D)')
-    ax.legend()
-    ax.grid(True)
-    plt.tight_layout()
-    plt.show()
-
