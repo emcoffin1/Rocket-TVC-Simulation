@@ -6,7 +6,7 @@ import numpy as np
 import os
 import io
 from contextlib import redirect_stdout
-aoa = 0
+aoa = 4
 
 flow_field = [
     np.sin(np.deg2rad(aoa)),        # no roll/yaw — X is 0
@@ -28,10 +28,11 @@ print("🔧 Initializing constants...")
 T_inf = 288.15  # Freestream temperature [K]
 gamma = 1.4
 R = 287.05      # Gas constant [J/kg-K]
-start = 2.0
-stop = 5.0
+start = 0.2
+stop = 1.2
 num = stop / 0.5
 mach_list = np.linspace(start=start, stop=stop, num=6)
+# mach_list = [0.4]
 ROCKET_SURF = "rocket_body"
 FARFIELD_SURF = "farfield"
 
